@@ -94,10 +94,26 @@ const PlanCard = ({
   );
 };
 
-const PaymentPlans = () => {
+const PaymentPlans = ({ user }: { user: any }) => {
   const stripeLinks = {
     monthly: 'https://buy.stripe.com/test_cNibJ30rr6Qr6SZe216kg02',
     yearly: 'https://buy.stripe.com/test_7sY5kF4HH3EfdhncXX6kg03'
+  };
+
+  const currentUrl = window.location.origin;
+
+  const handleSubscribe = (baseUrl: string) => {
+    if (!user) {
+      alert("Por favor inicia sesión para suscribirte.");
+      return;
+    }
+    const checkoutUrl = new URL(baseUrl);
+    checkoutUrl.searchParams.append('prefilled_email', user.email);
+    checkoutUrl.searchParams.append('client_reference_id', user.uid);
+    // Note: Checkout Session success_url can't be set via query param on a static link, 
+    // but we can detect the return if the Stripe link is configured to redirect back.
+    // Assuming the Stripe Payment Link is configured to redirect to: currentUrl + "?payment_success=true"
+    window.open(checkoutUrl.toString(), '_blank');
   };
 
   const plans = [
@@ -132,7 +148,7 @@ const PaymentPlans = () => {
       ],
       buttonText: "Suscribirse Ahora",
       isPopular: true,
-      onSubscribe: () => window.open(stripeLinks.monthly, '_blank'),
+      onSubscribe: () => handleSubscribe(stripeLinks.monthly),
       icon: BriefcaseMedical,
       gradient: "from-[#191970] to-[#2a2a9a]"
     },
@@ -150,7 +166,7 @@ const PaymentPlans = () => {
       ],
       buttonText: "Elegir Plan Anual",
       isPopular: false,
-      onSubscribe: () => window.open(stripeLinks.yearly, '_blank'),
+      onSubscribe: () => handleSubscribe(stripeLinks.yearly),
       icon: Sparkles,
       gradient: "from-[#083825] to-[#125c3d]"
     }

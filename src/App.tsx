@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import {
   collection,
+  collectionGroup,
   doc,
   setDoc,
   getDoc,
@@ -89,6 +90,12 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import PaymentPlans from './components/PaymentPlans';
+import { 
+  canUseAI, 
+  incrementUsage, 
+  resetMonthlyUsage, 
+  shouldResetMonthlyUsage 
+} from './lib/usageLimits';
 
 const ADMIN_EMAILS = ["androxus512rbm@gmail.com", "luise.sb5845@gmail.com"];
 
@@ -137,6 +144,7 @@ interface UserProfile {
   role?: 'doctor' | 'admin';
   plan?: 'free' | 'pro' | 'whitelisted';
   usageThisMonth?: number;
+  usageLastReset?: any;
 }
 
 interface ChatMessage {
@@ -165,7 +173,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin }: {
   ];
 
   return (
-    <aside className="fixed inset-y-0 left-0 flex flex-col justify-between py-6 px-4 bg-gradient-to-br from-[#191970] to-[#083825] h-screen w-64 overflow-y-auto z-50 shadow-[0px_10px_30px_rgba(25,25,112,0.08)] no-scrollbar">
+    <aside className="fixed inset-y-0 left-0 flex flex-col justify-between py-6 px-4 sidebar-gradient h-screen w-64 overflow-y-auto z-50 shadow-ambient no-scrollbar">
       <div className="space-y-8">
         <div className="flex items-center gap-4 px-4">
           <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-lg">
@@ -195,6 +203,28 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin }: {
         </nav>
       </div>
       <div className="space-y-4">
+        {/* Upgrade CTA */}
+        {user?.plan === 'free' && (
+          <div className="px-4 mb-4">
+            <button 
+              onClick={() => setActiveTab('plans')}
+              className="w-full p-4 rounded-xl relative overflow-hidden group transition-all duration-300 hover:scale-[1.02] active:scale-95 shadow-lg"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary via-[#2a2a9a] to-primary opacity-90 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.1)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_3s_infinite] group-hover:animate-[shimmer_1.5s_infinite]"></div>
+              <div className="relative flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-md">
+                  <Sparkles className="w-4 h-4 text-white animate-pulse" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest leading-none mb-1">Potencie su Clínica</p>
+                  <p className="text-sm font-extrabold text-white leading-none">Actualizar a Pro</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        )}
+
         <div className="px-4 flex items-center gap-3">
           <div className="relative">
             <img 
@@ -502,8 +532,8 @@ const PatientsList = ({
   );
 };
 
-const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation, onStartConsultation, search, onSearchChange, user, setActiveTab }: { 
-  patients: Patient[]; 
+const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation, onStartConsultation, search, onSearchChange, user, setActiveTab, consultationsToday, totalConsultations }: {
+  patients: Patient[];
   onSelectPatient: (p: Patient) => void;
   onAddPatient: () => void;
   onNewConsultation: () => void;
@@ -512,6 +542,8 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
   onSearchChange: (s: string) => void;
   user: UserProfile | null;
   setActiveTab: (tab: string) => void;
+  consultationsToday: number;
+  totalConsultations: number;
 }) => {
   const sortedPatients = useMemo(() => {
     return [...patients].sort((a, b) => {
@@ -568,7 +600,7 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
             <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">+12% vs ayer</span>
           </div>
           <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Consultas Hoy</p>
-          <h3 className="text-3xl font-extrabold text-on-surface mt-1">14</h3>
+          <h3 className="text-3xl font-extrabold text-on-surface mt-1">{consultationsToday}</h3>
           <div className="mt-4 h-1 bg-surface-container-high rounded-full overflow-hidden">
             <div className="h-full bg-primary w-[70%]"></div>
           </div>
@@ -612,9 +644,9 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
               <FileText className="text-primary w-5 h-5" />
             </div>
           </div>
-          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Documentos Generados</p>
-          <h3 className="text-3xl font-extrabold text-on-surface mt-1">28</h3>
-          <p className="text-xs text-on-surface-variant mt-1">Pendientes de firma: 2</p>
+          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Total Consultas</p>
+          <h3 className="text-3xl font-extrabold text-on-surface mt-1">{totalConsultations}</h3>
+          <p className="text-xs text-on-surface-variant mt-1">Registradas en el sistema</p>
         </div>
       </section>
 
@@ -716,7 +748,7 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
   );
 };
 
-const DocumentGenerator = ({ user }: { user: UserProfile | null }) => {
+const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
   const [dictation, setDictation] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -755,10 +787,25 @@ const DocumentGenerator = ({ user }: { user: UserProfile | null }) => {
 
   const handleGenerate = async () => {
     if (!dictation) return;
+    
+    // Check usage limits
+    const { allowed, remaining } = canUseAI(profile);
+    if (!allowed && profile?.plan !== 'whitelisted') {
+      alert("Has alcanzado tu límite mensual de consultas IA. Por favor, actualiza tu plan para continuar.");
+      return;
+    }
+
     setIsGenerating(true);
     try {
-      const doc = await generateClinicalDocument(dictation, `Doctor: ${user?.displayName}, Specialty: ${user?.specialty}`);
+      const doc = await generateClinicalDocument(dictation, `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`);
       setDocument(doc);
+      
+      // Increment usage
+      if (profile) {
+        await incrementUsage(profile);
+        // Local update to avoid waiting for snapshot if needed, 
+        // though onSnapshot will eventually update 'profile'
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -990,7 +1037,7 @@ const DocumentGenerator = ({ user }: { user: UserProfile | null }) => {
   );
 };
 
-const AIAssistant = ({ user }: { user: UserProfile | null }) => {
+const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -1011,6 +1058,13 @@ const AIAssistant = ({ user }: { user: UserProfile | null }) => {
   const handleSend = async () => {
     if (!input && !image) return;
     
+    // Check usage limits
+    const { allowed } = canUseAI(profile);
+    if (!allowed && profile?.plan !== 'whitelisted') {
+      alert("Has alcanzado tu límite mensual de consultas IA. Por favor, actualiza tu plan para continuar.");
+      return;
+    }
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -1039,6 +1093,11 @@ const AIAssistant = ({ user }: { user: UserProfile | null }) => {
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMessage]);
+
+      // Increment usage after successful AI response
+      if (profile) {
+        await incrementUsage(profile);
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -1708,9 +1767,9 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-high-contrast">Gestión de Usuarios</h2>
-        <p className="text-white/50 text-sm mt-1">
-          {users.length} usuarios registrados · Solo visible para el administrador
+        <h2 className="text-3xl font-bold text-primary tracking-tight">Gestión de Usuarios</h2>
+        <p className="text-high-contrast/60 text-sm mt-1 font-medium">
+          {users.length} usuarios registrados · Acceso administrativo exclusivo
         </p>
       </div>
 
@@ -1718,47 +1777,55 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
         {users.map(u => (
           <div
             key={u.uid}
-            className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 backdrop-blur-md"
+            className="flex items-center justify-between p-5 rounded-2xl bg-white border border-surface-container-high shadow-ambient transition-all hover:shadow-lg hover:-translate-y-0.5"
           >
-            <div className="flex items-center gap-3">
-              <img
-                src={u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=191970&color=fff`}
-                alt={u.displayName}
-                className="w-10 h-10 rounded-full object-cover border border-white/20"
-              />
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <img
+                  src={u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=191970&color=fff`}
+                  alt={u.displayName}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-surface-container-low"
+                />
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
+              </div>
               <div>
-                <p className="text-sm font-semibold text-high-contrast">{u.displayName}</p>
-                <p className="text-xs text-white/50">{u.email}</p>
+                <p className="text-base font-bold text-primary">{u.displayName}</p>
+                <p className="text-xs font-medium text-high-contrast/60">{u.email}</p>
                 {u.specialty && (
-                  <p className="text-xs text-white/30">{u.specialty}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-secondary mt-1">{u.specialty}</p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className={`text-xs px-2 py-1 rounded-full border font-medium ${getPlanBadge(u.plan)}`}>
+            <div className="flex items-center gap-4">
+              <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border ${getPlanBadge(u.plan)}`}>
                 {u.plan || 'free'}
               </span>
 
               {u.email !== currentUserEmail && (
-                <select
-                  disabled={updatingId === u.uid}
-                  value={u.plan || 'free'}
-                  onChange={(e) => handleChangePlan(u.uid, e.target.value as any)}
-                  className="text-xs bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-white/80 focus:outline-none focus:border-white/40 disabled:opacity-50 cursor-pointer"
-                >
-                  <option value="free" className="bg-[#191970]">Free</option>
-                  <option value="pro" className="bg-[#191970]">Pro</option>
-                  <option value="whitelisted" className="bg-[#191970]">Whitelisted ✓</option>
-                </select>
+                <div className="relative group">
+                  <select
+                    disabled={updatingId === u.uid}
+                    value={u.plan || 'free'}
+                    onChange={(e) => handleChangePlan(u.uid, e.target.value as any)}
+                    className="text-xs font-bold bg-surface-container-low border border-surface-container-high rounded-xl px-4 py-2.5 text-primary hover:bg-white hover:border-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-50 cursor-pointer appearance-none pr-10"
+                  >
+                    <option value="free">Free</option>
+                    <option value="pro">Pro</option>
+                    <option value="whitelisted">Whitelisted ✓</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary/40">
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+                </div>
               )}
 
               {u.email === currentUserEmail && (
-                <span className="text-xs text-white/30 italic">Tú (admin)</span>
+                <span className="text-[10px] font-bold text-high-contrast/30 uppercase tracking-widest bg-surface-container-low px-3 py-1.5 rounded-full">Admin Root</span>
               )}
 
               {updatingId === u.uid && (
-                <div className="w-4 h-4 border border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
               )}
             </div>
           </div>
@@ -1818,8 +1885,34 @@ export default function App() {
       setUser(firebaseUser);
       if (firebaseUser) {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        let currentUserProfile: UserProfile;
+
         if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
+          currentUserProfile = userDoc.data() as UserProfile;
+          
+          // Check for monthly reset
+          if (shouldResetMonthlyUsage(currentUserProfile.usageLastReset)) {
+            await resetMonthlyUsage(firebaseUser.uid);
+            // Refresh profile after reset
+            const updatedDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            currentUserProfile = updatedDoc.data() as UserProfile;
+          }
+          
+          setProfile(currentUserProfile);
+
+          // Phase 3: Spark Plan Success Detection
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.get('payment_success') === 'true' && currentUserProfile.plan === 'free') {
+            await updateDoc(doc(db, 'users', firebaseUser.uid), {
+              plan: 'pro'
+            });
+            // Refresh local profile
+            setProfile({ ...currentUserProfile, plan: 'pro' });
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            // Notify user
+            alert("¡Felicidades! Tu plan ha sido actualizado a Pro exitosamente.");
+          }
         } else {
           const newProfile: UserProfile = {
             uid: firebaseUser.uid,
@@ -1827,6 +1920,8 @@ export default function App() {
             email: firebaseUser.email || '',
             photoURL: firebaseUser.photoURL || '',
             plan: 'free',
+            usageThisMonth: 0,
+            usageLastReset: serverTimestamp(),
           };
           await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
           setProfile(newProfile);
@@ -1849,6 +1944,35 @@ export default function App() {
       });
     }
   }, [user]);
+
+  // Fetch all consultations for dashboard stats
+  const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      const q = query(
+        collectionGroup(db, 'consultations'),
+        where('doctorUid', '==', user.uid),
+        orderBy('date', 'desc')
+      );
+      return onSnapshot(q, (snapshot) => {
+        setAllConsultations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consultation)));
+      }, (error) => {
+        console.error('Error fetching consultations:', error);
+      });
+    }
+  }, [user]);
+
+  // Calculate stats for dashboard
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const consultationsToday = allConsultations.filter(c => {
+    const cDate = new Date(c.date?.toDate?.() || c.date);
+    cDate.setHours(0, 0, 0, 0);
+    return cDate.getTime() === today.getTime();
+  }).length;
+
+  const totalConsultations = allConsultations.length;
 
   const handleLogin = async () => {
     try {
@@ -2093,9 +2217,9 @@ export default function App() {
               ) : (
                 <>
                   {activeTab === 'dashboard' && (
-                    <Dashboard 
-                      patients={patients} 
-                      onSelectPatient={setSelectedPatient} 
+                    <Dashboard
+                      patients={patients}
+                      onSelectPatient={setSelectedPatient}
                       onAddPatient={() => setShowAddPatient(true)}
                       onNewConsultation={() => setShowPatientSearchModal(true)}
                       onStartConsultation={(p) => {
@@ -2106,6 +2230,8 @@ export default function App() {
                       onSearchChange={setSearch}
                       user={profile}
                       setActiveTab={setActiveTab}
+                      consultationsToday={consultationsToday}
+                      totalConsultations={totalConsultations}
                     />
                   )}
                   {activeTab === 'patients' && (
@@ -2137,9 +2263,9 @@ export default function App() {
                       onDateFilterChange={setPatientDateFilter}
                     />
                   )}
-                  {activeTab === 'generate' && <DocumentGenerator user={profile} />}
-                  {activeTab === 'assistant' && <AIAssistant user={profile} />}
-                  {activeTab === 'plans' && <PaymentPlans />}
+                  {activeTab === 'generate' && <DocumentGenerator user={user} profile={profile} />}
+                  {activeTab === 'assistant' && <AIAssistant user={user} profile={profile} />}
+                  {activeTab === 'plans' && <PaymentPlans user={profile} />}
                   {activeTab === 'settings' && <SettingsScreen user={profile} onUpdate={handleUpdateProfile} />}
                   {activeTab === 'admin' && isAdmin && (
                     <AdminPanel currentUserEmail={profile?.email || ''} />
