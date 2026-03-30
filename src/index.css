@@ -4,58 +4,16 @@
 @theme {
   --font-manrope: "Manrope", sans-serif;
   
-  --color-primary: #040053;
-  --color-secondary: #3b6751;
-  --color-on-primary-fixed: #0a0565;
-  --color-on-tertiary-fixed-variant: #773219;
-  --color-tertiary-container: #4d1300;
-  --color-tertiary: #2a0700;
-  --color-surface-container-lowest: #ffffff;
-  --color-on-tertiary-fixed: #390c00;
-  --color-surface-container-low: #f3f4f5;
-  --color-on-secondary-fixed-variant: #234f3a;
-  --color-inverse-on-surface: #f0f1f2;
-  --color-primary-fixed-dim: #c0c1ff;
-  --color-surface-variant: #e1e3e4;
-  --color-inverse-primary: #c0c1ff;
-  --color-surface-container: #edeeef;
-  --color-on-primary: #ffffff;
-  --color-on-surface-variant: #464651;
-  --color-on-background: #191c1d;
-  --color-outline: #777682;
-  --color-surface-dim: #d9dadb;
-  --color-primary-fixed: #e1e0ff;
-  --color-background: #f8f9fa;
-  --color-surface-container-high: #e7e8e9;
-  --color-on-secondary: #ffffff;
-  --color-surface-tint: #5355aa;
-  --color-on-secondary-fixed: #002113;
-  --color-error: #ba1a1a;
-  --color-on-surface: #191c1d;
-  --color-secondary-fixed: #bdedd1;
-  --color-on-primary-container: #8386de;
-  --color-surface-container-highest: #e1e3e4;
-  --color-on-tertiary-container: #d07658;
-  --color-on-primary-fixed-variant: #3b3d90;
-  --color-outline-variant: #c7c5d3;
-  --color-surface-bright: #f8f9fa;
-  --color-secondary-container: #bbebce;
-  --color-primary-container: #191970;
-  --color-on-secondary-container: #406b55;
-  --color-secondary-fixed-dim: #a2d1b6;
-  --color-on-error: #ffffff;
-  --color-inverse-surface: #2e3132;
-  --color-error-container: #ffdad6;
-  --color-tertiary-fixed: #ffdbd0;
-  --color-on-error-container: #93000a;
-  --color-tertiary-fixed-dim: #ffb59d;
-  --color-surface: #f8f9fa;
-  --color-on-tertiary: #ffffff;
-
-  --color-surface-lowest: #FFFFFF;
-  --color-surface-low: #F3F4F5;
-  --color-surface-high: #E7E8E9;
+  --color-primary: #191970;
+  --color-secondary: #083825;
   --color-high-contrast: #191C1D;
+  
+  --color-surface-container-lowest: #FFFFFF;
+  --color-surface-container-low: #F3F4F5;
+  --color-surface-container-high: #E7E8E9;
+  
+  --color-on-surface: #191C1D;
+  --color-background: #F3F4F5;
   
   --shadow-ambient: 0px 10px 30px rgba(25, 25, 112, 0.08);
 }
@@ -77,17 +35,17 @@
 
   .glass-floating {
     background: rgba(255, 255, 255, 0.70);
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px);
   }
 
   .glass-action {
-    background: rgba(255, 255, 255, 0.20);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.30);
+    backdrop-filter: blur(12px);
   }
 
   .glass-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(16px);
   }
 
   .btn-primary {
