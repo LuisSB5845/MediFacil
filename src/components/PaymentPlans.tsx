@@ -96,8 +96,8 @@ const PlanCard = ({
 
 const PaymentPlans = ({ user }: { user: any }) => {
   const stripeLinks = {
-    monthly: 'https://buy.stripe.com/test_cNibJ30rr6Qr6SZe216kg02',
-    yearly: 'https://buy.stripe.com/test_7sY5kF4HH3EfdhncXX6kg03'
+    monthly: 'https://buy.stripe.com/test_28E3cxfmlb6Ha5b6zz6kg04',
+    yearly: 'https://buy.stripe.com/test_14A28tded4Ija5b3nn6kg05'
   };
 
   const currentUrl = window.location.origin;
@@ -153,7 +153,7 @@ const PaymentPlans = ({ user }: { user: any }) => {
       gradient: "from-[#191970] to-[#2a2a9a]"
     },
     {
-      name: "Plan Anual Clínica",
+      name: "Plan Anual Médico",
       price: "$99.99",
       interval: "/año",
       description: "Digitaliza tu clínica completa con ahorros significativos y máxima potencia.",
