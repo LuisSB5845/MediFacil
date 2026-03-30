@@ -1,0 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-manrope: "Manrope", sans-serif;
+  
+  --color-primary: #040053;
+  --color-secondary: #3b6751;
+  --color-on-primary-fixed: #0a0565;
+  --color-on-tertiary-fixed-variant: #773219;
+  --color-tertiary-container: #4d1300;
+  --color-tertiary: #2a0700;
+  --color-surface-container-lowest: #ffffff;
+  --color-on-tertiary-fixed: #390c00;
+  --color-surface-container-low: #f3f4f5;
+  --color-on-secondary-fixed-variant: #234f3a;
+  --color-inverse-on-surface: #f0f1f2;
+  --color-primary-fixed-dim: #c0c1ff;
+  --color-surface-variant: #e1e3e4;
+  --color-inverse-primary: #c0c1ff;
+  --color-surface-container: #edeeef;
+  --color-on-primary: #ffffff;
+  --color-on-surface-variant: #464651;
+  --color-on-background: #191c1d;
+  --color-outline: #777682;
+  --color-surface-dim: #d9dadb;
+  --color-primary-fixed: #e1e0ff;
+  --color-background: #f8f9fa;
+  --color-surface-container-high: #e7e8e9;
+  --color-on-secondary: #ffffff;
+  --color-surface-tint: #5355aa;
+  --color-on-secondary-fixed: #002113;
+  --color-error: #ba1a1a;
+  --color-on-surface: #191c1d;
+  --color-secondary-fixed: #bdedd1;
+  --color-on-primary-container: #8386de;
+  --color-surface-container-highest: #e1e3e4;
+  --color-on-tertiary-container: #d07658;
+  --color-on-primary-fixed-variant: #3b3d90;
+  --color-outline-variant: #c7c5d3;
+  --color-surface-bright: #f8f9fa;
+  --color-secondary-container: #bbebce;
+  --color-primary-container: #191970;
+  --color-on-secondary-container: #406b55;
+  --color-secondary-fixed-dim: #a2d1b6;
+  --color-on-error: #ffffff;
+  --color-inverse-surface: #2e3132;
+  --color-error-container: #ffdad6;
+  --color-tertiary-fixed: #ffdbd0;
+  --color-on-error-container: #93000a;
+  --color-tertiary-fixed-dim: #ffb59d;
+  --color-surface: #f8f9fa;
+  --color-on-tertiary: #ffffff;
+
+  --color-surface-lowest: #FFFFFF;
+  --color-surface-low: #F3F4F5;
+  --color-surface-high: #E7E8E9;
+  --color-high-contrast: #191C1D;
+  
+  --shadow-ambient: 0px 10px 30px rgba(25, 25, 112, 0.08);
+}
+
+@layer base {
+  body {
+    @apply font-manrope bg-background text-on-surface antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+}
+
+@layer components {
+  .sidebar-gradient {
+    background: linear-gradient(135deg, #191970, #083825);
+  }
+
+  .glass-floating {
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(16px);
+  }
+
+  .glass-action {
+    background: rgba(255, 255, 255, 0.20);
+    backdrop-filter: blur(10px);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white rounded-lg font-bold transition-all hover:opacity-90 active:scale-95 px-6 py-3;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border border-primary/15 text-primary rounded-lg font-bold transition-all hover:bg-primary/5 active:scale-95 px-6 py-3;
+  }
+
+  .input-field {
+    @apply bg-surface-container-high border-none rounded-full p-4 text-sm font-medium transition-all outline-none;
+    @apply focus:bg-white focus:ring-1 focus:ring-primary/15;
+  }
+
+  .card-atelier {
+    @apply bg-surface-container-lowest rounded-xl shadow-sm;
+  }
+
+  /* Typography levels */
+  .display-atelier {
+    @apply text-[3.5rem] font-extrabold tracking-[-0.02em] leading-tight;
+  }
+
+  .headline-atelier {
+    @apply text-[2.0rem] font-bold tracking-[0.02em] leading-tight;
+  }
+
+  .title-atelier {
+    @apply text-[1.375rem] font-bold leading-snug;
+  }
+
+  .body-atelier {
+    @apply text-[1.0rem] font-normal leading-relaxed;
+  }
+
+  .label-atelier {
+    @apply text-[0.75rem] font-bold uppercase tracking-[0.05em];
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #E7E8E9;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #D1D5DB;
+}
