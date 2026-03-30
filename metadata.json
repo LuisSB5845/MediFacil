@@ -1,0 +1,5 @@
+{
+  "name": "MediFácil Clinical Atelier",
+  "description": "A premium clinical management dashboard with AI-powered document generation, voice dictation, and medical image analysis.",
+  "requestFramePermissions": ["microphone", "camera"]
+}

@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores professional profile information for the medical doctor.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "specialty": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "bio": { "type": "string" },
+        "phone": { "type": "string" },
+        "officeLocation": { "type": "string" },
+        "role": { "type": "string", "enum": ["doctor", "admin"] }
+      },
+      "required": ["uid", "email"]
+    },
+    "Patient": {
+      "title": "Patient Record",
+      "description": "Stores clinical information for a patient.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string", "enum": ["Masculino", "Femenino", "Otro"] },
+        "age": { "type": "number" },
+        "bloodType": { "type": "string" },
+        "allergies": { "type": "string" },
+        "height": { "type": "number" },
+        "weight": { "type": "number" },
+        "bmi": { "type": "number" },
+        "doctorUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "doctorUid"]
+    },
+    "Consultation": {
+      "title": "Medical Consultation",
+      "description": "Stores details of a specific medical visit.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "doctorUid": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "findings": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "plan": { "type": "string" },
+        "vitals": {
+          "type": "object",
+          "properties": {
+            "bloodPressure": { "type": "string" },
+            "heartRate": { "type": "number" }
+          }
+        }
+      },
+      "required": ["patientId", "doctorUid", "date"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "Stores a message in a multi-turn conversation with the AI assistant.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "role", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles for medical staff."
+    },
+    "/patients/{patientId}": {
+      "schema": "Patient",
+      "description": "Patient clinical records."
+    },
+    "/patients/{patientId}/consultations/{consultationId}": {
+      "schema": "Consultation",
+      "description": "Consultation history for a patient."
+    },
+    "/users/{userId}/chat_history/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "AI assistant chat history for a user."
+    }
+  }
+}
