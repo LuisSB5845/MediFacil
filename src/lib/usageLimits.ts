@@ -1,39 +1,72 @@
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 export type PlanType = 'free' | 'pro' | 'whitelisted';
 
 export interface UsageLimits {
   maxConsultations: number;
+  maxDocuments: number;
+  maxAIMessages: number;
 }
 
 export const PLAN_LIMITS: Record<PlanType, UsageLimits> = {
-  free: { maxConsultations: 20 },
-  pro: { maxConsultations: Infinity },
-  whitelisted: { maxConsultations: Infinity },
+  free: { 
+    maxConsultations: 20,
+    maxDocuments: 5,
+    maxAIMessages: 20
+  },
+  pro: { 
+    maxConsultations: Infinity,
+    maxDocuments: Infinity,
+    maxAIMessages: Infinity
+  },
+  whitelisted: { 
+    maxConsultations: Infinity,
+    maxDocuments: Infinity,
+    maxAIMessages: Infinity
+  },
 };
 
 export interface UserProfileWithUsage {
   uid: string;
-  email: string;
+  role?: 'admin' | 'doctor';
   plan?: PlanType;
-  usageThisMonth?: number;
-  usageLastReset?: any;
+  consultationsThisMonth?: number;
+  documentsThisMonth?: number;
+  aiMessagesThisMonth?: number;
+  usageResetDate?: string;
 }
 
 /**
- * Verifica si el usuario puede usar la IA
+ * Checks if the user can use AI messages.
  */
 export function canUseAI(user: UserProfileWithUsage | null): { allowed: boolean; remaining: number; limit: number } {
-  if (!user) {
-    return { allowed: false, remaining: 0, limit: 0 };
+  if (!user) return { allowed: false, remaining: 0, limit: 0 };
+
+  // Admins and Pro/Whitelisted plans have unlimited AI
+  if (user.role === 'admin' || user.plan === 'whitelisted' || user.plan === 'pro') {
+    return { allowed: true, remaining: Infinity, limit: Infinity };
   }
+
+  const limits = PLAN_LIMITS[user.plan || 'free'];
+  const currentUsage = user.aiMessagesThisMonth || 0;
+
+  const remaining = Math.max(0, limits.maxAIMessages - currentUsage);
+  const allowed = currentUsage < limits.maxAIMessages;
+
+  return { allowed, remaining, limit: limits.maxAIMessages };
+}
+
+/**
+ * Checks if the user can create a consultation.
+ */
+export function canCreateConsultation(user: UserProfileWithUsage | null): { allowed: boolean; remaining: number; limit: number } {
+  if (!user) return { allowed: false, remaining: 0, limit: 0 };
 
   const plan: PlanType = user.plan || 'free';
   const limits = PLAN_LIMITS[plan];
-  const currentUsage = user.usageThisMonth || 0;
+  const currentUsage = user.consultationsThisMonth || 0;
 
-  // Pro and Whitelisted users have unlimited access
   if (limits.maxConsultations === Infinity) {
     return { allowed: true, remaining: Infinity, limit: Infinity };
   }
@@ -45,39 +78,57 @@ export function canUseAI(user: UserProfileWithUsage | null): { allowed: boolean;
 }
 
 /**
- * Incrementa el contador de uso del usuario
+ * Increments AI message usage.
  */
-export async function incrementUsage(user: UserProfileWithUsage): Promise<void> {
-  if (!user?.uid) return;
-
-  const newUsage = (user.usageThisMonth || 0) + 1;
-
-  await updateDoc(doc(db, 'users', user.uid), {
-    usageThisMonth: newUsage,
+export async function incrementAIUsage(uid: string, currentUsage: number): Promise<void> {
+  if (!uid) return;
+  await updateDoc(doc(db, 'users', uid), {
+    aiMessagesThisMonth: currentUsage + 1,
   });
 }
 
 /**
- * Formatea el número de consultas restantes para mostrar en UI
+ * Increments consultation usage.
  */
+export async function incrementConsultationUsage(uid: string, currentUsage: number): Promise<void> {
+  if (!uid) return;
+  await updateDoc(doc(db, 'users', uid), {
+    consultationsThisMonth: currentUsage + 1,
+  });
+}
+
+/**
+ * Checks if monthly usage should be reset.
+ */
+export function shouldResetMonthlyUsage(usageResetDate: string | undefined): boolean {
+  if (!usageResetDate) return true;
+  const resetDate = new Date(usageResetDate);
+  const now = new Date();
+  return now >= resetDate;
+}
+
+/**
+ * Resets monthly usage counters.
+ */
+export async function resetMonthlyUsage(uid: string): Promise<void> {
+  const nextReset = new Date();
+  nextReset.setMonth(nextReset.getMonth() + 1);
+  nextReset.setDate(1);
+  nextReset.setHours(0, 0, 0, 0);
+
+  await updateDoc(doc(db, 'users', uid), {
+    consultationsThisMonth: 0,
+    documentsThisMonth: 0,
+    aiMessagesThisMonth: 0,
+    usageResetDate: nextReset.toISOString(),
+  });
+}
+
 export function formatUsageDisplay(remaining: number, limit: number): string {
-  if (limit === Infinity) {
-    return 'Ilimitado';
-  }
+  if (limit === Infinity) return 'Ilimitado';
   return `${remaining} / ${limit} restantes`;
 }
 
-/**
- * Obtiene el porcentaje de uso para la barra de progreso
- */
-export function getUsagePercentage(usage: number, limit: number): number {
-  if (limit === Infinity) return 0;
-  return Math.min(100, (usage / limit) * 100);
-}
-
-/**
- * Obtiene el nombre del plan para mostrar
- */
 export function getPlanDisplayName(plan: PlanType): string {
   const names: Record<PlanType, string> = {
     free: 'Gratis',
@@ -85,30 +136,4 @@ export function getPlanDisplayName(plan: PlanType): string {
     whitelisted: 'Whitelisted',
   };
   return names[plan] || 'Gratis';
-}
-
-/**
- * Verifica si se debe resetear el uso mensual
- * Retorna true si el último reset fue en un mes diferente
- */
-export function shouldResetMonthlyUsage(usageLastReset: any): boolean {
-  if (!usageLastReset) return true;
-
-  const lastReset = usageLastReset?.toDate ? usageLastReset.toDate() : new Date(usageLastReset);
-  const now = new Date();
-
-  return (
-    lastReset.getMonth() !== now.getMonth() ||
-    lastReset.getFullYear() !== now.getFullYear()
-  );
-}
-
-/**
- * Resetea el contador de uso mensual
- */
-export async function resetMonthlyUsage(uid: string): Promise<void> {
-  await updateDoc(doc(db, 'users', uid), {
-    usageThisMonth: 0,
-    usageLastReset: serverTimestamp(),
-  });
 }

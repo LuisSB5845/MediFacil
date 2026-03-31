@@ -183,3 +183,23 @@ html {
   );
   animation: borderShimmer 4s linear infinite;
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-document, #printable-document * {
+    visibility: visible;
+  }
+  #printable-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 2rem !important;
+    margin: 0;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+  }
+}
