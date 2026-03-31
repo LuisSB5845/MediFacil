@@ -1,18 +1,27 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// Use import.meta.env for Vite projects
+const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || "";
+const genAI = new GoogleGenerativeAI(apiKey);
 
 export const models = {
-  pro: "gemini-3.1-pro-preview",
-  flash: "gemini-3-flash-preview",
-  lite: "gemini-3.1-flash-lite-preview",
-  image: "gemini-3.1-pro-preview", // For image analysis as per instructions
+  pro: "gemini-1.5-pro",
+  flash: "gemini-1.5-flash",
+  image: "gemini-1.5-flash", 
 };
 
+/**
+ * Generates a structured clinical document based on a prompt and context.
+ */
 export async function generateClinicalDocument(prompt: string, context: string = "") {
-  const response = await ai.models.generateContent({
+  const model = genAI.getGenerativeModel({ 
     model: models.pro,
-    contents: `Analyze the following medical context and generate a structured clinical document.
+    generationConfig: {
+      responseMimeType: "application/json",
+    }
+  });
+
+  const fullPrompt = `Analyze the following medical context and generate a structured clinical document.
     Context: ${context}
     Prompt: ${prompt}
     
@@ -27,53 +36,46 @@ export async function generateClinicalDocument(prompt: string, context: string =
         "bloodPressure": "string",
         "heartRate": "number"
       }
-    }`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          patientName: { type: Type.STRING },
-          date: { type: Type.STRING },
-          findings: { type: Type.STRING },
-          diagnosis: { type: Type.STRING },
-          plan: { type: Type.STRING },
-          vitals: {
-            type: Type.OBJECT,
-            properties: {
-              bloodPressure: { type: Type.STRING },
-              heartRate: { type: Type.NUMBER }
-            }
-          }
-        }
-      }
-    }
-  });
-  return JSON.parse(response.text);
+    }`;
+
+  const result = await model.generateContent(fullPrompt);
+  const response = await result.response;
+  return JSON.parse(response.text());
 }
 
+/**
+ * Analyzes a medical image and answers a prompt.
+ */
 export async function analyzeMedicalImage(base64Image: string, prompt: string) {
-  const imagePart = {
-    inlineData: {
-      mimeType: "image/jpeg",
-      data: base64Image,
+  const model = genAI.getGenerativeModel({ model: models.image });
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: base64Image,
+      },
     },
-  };
-  const textPart = {
-    text: `You are a medical AI assistant. Analyze this medical image and answer the following question: ${prompt}`,
-  };
-  const response = await ai.models.generateContent({
-    model: models.image,
-    contents: { parts: [imagePart, textPart] },
-  });
-  return response.text;
+    { text: `You are a medical AI assistant. Analyze this medical image and answer the following question: ${prompt}` },
+  ]);
+
+  const response = await result.response;
+  return response.text();
 }
 
+/**
+ * Creates an interactive chat session.
+ */
 export function createChat() {
-  return ai.chats.create({
+  const model = genAI.getGenerativeModel({ 
     model: models.flash,
-    config: {
-      systemInstruction: "You are MediFácil AI, a clinical assistant for doctors. You help with patient verification, medical recommendations based on evidence, and automated document management. Be professional, precise, and supportive.",
+    systemInstruction: "You are MediFácil AI, a clinical assistant for doctors. You help with patient verification, medical recommendations based on evidence, and automated document management. Be professional, precise, and supportive.",
+  });
+
+  return model.startChat({
+    history: [],
+    generationConfig: {
+      maxOutputTokens: 2000,
     },
   });
 }

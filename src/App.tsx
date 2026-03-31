@@ -94,7 +94,7 @@ import ReactMarkdown from 'react-markdown';
 import PaymentPlans from './components/PaymentPlans';
 import { 
   canUseAI, 
-  incrementUsage, 
+  incrementAIUsage, 
   resetMonthlyUsage, 
   shouldResetMonthlyUsage 
 } from './lib/usageLimits';
@@ -1426,7 +1426,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
   const [dictation, setDictation] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [document, setDocument] = useState<any>(null);
+  const [clinicalDoc, setClinicalDoc] = useState<any>(null);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
@@ -1472,13 +1472,11 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
     setIsGenerating(true);
     try {
       const doc = await generateClinicalDocument(dictation, `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`);
-      setDocument(doc);
+      setClinicalDoc(doc);
       
       // Increment usage
       if (profile) {
-        await incrementUsage(profile);
-        // Local update to avoid waiting for snapshot if needed, 
-        // though onSnapshot will eventually update 'profile'
+        await incrementAIUsage(profile.uid, profile.aiMessagesThisMonth || 0);
       }
     } catch (error) {
       console.error(error);
@@ -1499,7 +1497,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
           <div className="space-y-4">
             {/* Option 1: Document Reference */}
             <div 
-              onClick={() => document.getElementById('file-upload-doc')?.click()}
+              onClick={() => window.document.getElementById('file-upload-doc')?.click()}
               className="group relative p-6 bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 rounded-xl cursor-pointer shadow-sm hover:shadow-md border border-transparent hover:border-primary-container/10"
             >
               <input 
@@ -1508,7 +1506,15 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) alert(`Archivo seleccionado: ${file.name}. La IA analizará este documento.`);
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const text = event.target?.result as string;
+                      setDictation(prev => prev + (prev ? '\n\n' : '') + "--- Contenido del archivo ---\n" + text);
+                      alert(`Archivo "${file.name}" cargado exitosamente.`);
+                    };
+                    reader.readAsText(file);
+                  }
                 }}
               />
               <div className="flex items-start gap-4">
@@ -1559,8 +1565,8 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                   disabled={isGenerating || !dictation}
                   className="bg-gradient-to-r from-primary-container to-secondary text-white px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-transform shadow-lg shadow-primary-container/20 disabled:opacity-50"
                 >
-                  {isGenerating ? <Activity className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  <span>Generar con IA</span>
+                  {isGenerating ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-white" />}
+                  <span>{isGenerating ? "Generando..." : "Enviar"}</span>
                 </button>
               </div>
             </div>
@@ -1600,19 +1606,39 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
               </button>
               <button 
                 onClick={() => {
+                  if (!clinicalDoc) return;
                   const content = `
-                    MediFácil - Informe de Interconsulta
-                    Paciente: ${document?.patientName || "Juan Alberto Pérez"}
-                    Fecha: ${new Date().toLocaleDateString()}
-                    Hallazgos: ${document?.findings || "N/A"}
-                    Diagnóstico: ${document?.diagnosis || "N/A"}
-                    Plan: ${document?.plan || "N/A"}
+MediFácil - Informe Clínico Inteligente
+=======================================
+FECHA: ${new Date().toLocaleString()}
+PACIENTE: ${clinicalDoc.patientName}
+ID-DOC: 4402-2910-MF
+
+HALLAZGOS:
+----------
+${clinicalDoc.findings}
+
+DIAGNÓSTICO:
+------------
+${clinicalDoc.diagnosis}
+
+PLAN DE TRATAMIENTO:
+--------------------
+${clinicalDoc.plan}
+
+SIGNOS VITALES:
+---------------
+Presión Arterial: ${clinicalDoc.vitals.bloodPressure}
+Frecuencia Cardíaca: ${clinicalDoc.vitals.heartRate} bpm
+
+---------------------------------------
+Generado automáticamente por MediFácil AI
                   `;
-                  const blob = new Blob([content], { type: 'text/plain' });
+                  const blob = new Blob([content.trim()], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
+                  const a = window.document.createElement('a');
                   a.href = url;
-                  a.download = `informe_${Date.now()}.txt`;
+                  a.download = `informe_${clinicalDoc.patientName.replace(/\s+/g, '_')}_${Date.now()}.txt`;
                   a.click();
                 }} 
                 className="p-2 hover:bg-white rounded-lg transition-colors text-on-surface-variant"
@@ -1622,7 +1648,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
               <div className="w-px h-6 bg-surface-container-highest mx-2"></div>
               <button 
                 onClick={() => {
-                  setDocument(null);
+                  setClinicalDoc(null);
                   setDictation('');
                 }}
                 className="bg-primary-container text-white px-5 py-2 rounded-lg font-bold text-sm"
@@ -1632,7 +1658,14 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
             </div>
           </div>
           {/* Document Body */}
-          <div className="flex-1 p-16 space-y-12">
+          <div id="printable-document" className={cn("flex-1 p-16 space-y-12 bg-white", !clinicalDoc && "flex items-center justify-center")}>
+            {!clinicalDoc ? (
+              <div className="text-center space-y-4">
+                <FileText className="w-16 h-16 text-primary/10 mx-auto" />
+                <p className="text-on-surface-variant font-medium">No se ha generado ningún documento aún.</p>
+              </div>
+            ) : (
+              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             {/* Header Section */}
             <div className="flex justify-between items-start">
               <div className="space-y-1">
@@ -1652,7 +1685,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Nombre del Paciente</label>
                   <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-primary-container" type="text" defaultValue={document?.patientName || "Juan Alberto Pérez"} />
+                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-primary-container" type="text" defaultValue={clinicalDoc?.patientName || "Juan Alberto Pérez"} />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1666,7 +1699,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                 <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Motivo de Referencia / Hallazgos</label>
                 <div className="p-6 bg-surface-container-low rounded-xl border-l-4 border-secondary/40">
                   <p className="text-on-surface text-sm leading-relaxed italic">
-                    {document?.findings || '"Paciente masculino de 45 años que presenta cuadro clínico de palpitaciones recurrentes. Durante la exploración se detecta soplo sistólico grado II/IV en foco mitral. Se requiere valoración por sub-especialidad para ecocardiograma doppler..."'}
+                    {clinicalDoc?.findings || '"Paciente masculino de 45 años que presenta cuadro clínico de palpitaciones recurrentes. Durante la exploración se detecta soplo sistólico grado II/IV en foco mitral. Se requiere valoración por sub-especialidad para ecocardiograma doppler..."'}
                   </p>
                 </div>
                 <p className="text-[9px] text-secondary font-bold flex items-center gap-1">
@@ -1678,13 +1711,13 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Diagnóstico Presuntivo</label>
                   <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" placeholder="I49.9 Arritmia cardíaca, no especificada" type="text" defaultValue={document?.diagnosis} />
+                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" placeholder="I49.9 Arritmia cardíaca, no especificada" type="text" defaultValue={clinicalDoc?.diagnosis} />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Plan de Manejo Inmediato</label>
                   <div className="min-h-[100px] py-4 px-0 border-b-2 border-surface-container-high">
-                    <textarea className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm leading-relaxed" placeholder="Indicar medicación o medidas preventivas..." rows={3} defaultValue={document?.plan}></textarea>
+                    <textarea className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm leading-relaxed" placeholder="Indicar medicación o medidas preventivas..." rows={3} defaultValue={clinicalDoc?.plan}></textarea>
                   </div>
                 </div>
               </div>
@@ -1705,10 +1738,12 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
-  );
+  </div>
+</div>
+);
 };
 
 const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
@@ -1756,8 +1791,9 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
         responseText = await analyzeMedicalImage(image.split(',')[1], input || "Analyze this image.");
         setImage(null);
       } else {
-        const result = await chatRef.current.sendMessage({ message: input });
-        responseText = result.text;
+        const result = await chatRef.current.sendMessage(input);
+        const response = await result.response;
+        responseText = response.text();
       }
 
       const aiMessage: ChatMessage = {
@@ -1770,7 +1806,7 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
 
       // Increment usage after successful AI response
       if (profile) {
-        await incrementUsage(profile);
+        await incrementAIUsage(profile.uid, profile.aiMessagesThisMonth || 0);
       }
     } catch (error) {
       console.error(error);
@@ -1867,8 +1903,8 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
               disabled={isTyping || (!input && !image)}
               className="btn-primary flex items-center gap-3 disabled:opacity-50"
             >
-              <Sparkles className="w-4 h-4" />
-              Generar con IA
+              <Send className="w-4 h-4" />
+              Enviar
             </button>
           </div>
           <div className="mt-4 flex justify-center gap-6">
@@ -2397,12 +2433,20 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         const snapshot = await getDocs(collection(db, 'users'));
-        setUsers(snapshot.docs.map(d => ({ ...d.data() } as UserProfile)));
+        setUsers(snapshot.docs.map(d => ({ 
+          uid: d.id, 
+          ...d.data() 
+        } as UserProfile)));
       } catch (err) {
         console.error('Error fetching users:', err);
       } finally {
@@ -2412,16 +2456,42 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
     fetchUsers();
   }, []);
 
-  const handleChangePlan = async (uid: string, newPlan: 'free' | 'pro' | 'whitelisted') => {
-    setUpdatingId(uid);
-    try {
-      await updateDoc(doc(db, 'users', uid), { plan: newPlan });
-      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, plan: newPlan } : u));
-    } catch (err) {
-      console.error('Error updating plan:', err);
-    } finally {
-      setUpdatingId(null);
-    }
+  const handleChangePlan = (uid: string, newPlan: 'free' | 'pro' | 'whitelisted') => {
+    setConfirmConfig({
+      title: "Confirmar Cambio de Plan",
+      message: `¿Estás seguro que deseas cambiar el plan de este usuario a ${newPlan.toUpperCase()}?`,
+      onConfirm: async () => {
+        setUpdatingId(uid);
+        try {
+          await updateDoc(doc(db, 'users', uid), { plan: newPlan });
+          setUsers(prev => prev.map(u => u.uid === uid ? { ...u, plan: newPlan } : u));
+        } catch (err) {
+          console.error('Error updating plan:', err);
+        } finally {
+          setUpdatingId(null);
+          setConfirmConfig(null);
+        }
+      }
+    });
+  };
+
+  const handleChangeRole = (uid: string, newRole: 'doctor' | 'admin') => {
+    setConfirmConfig({
+      title: "Confirmar Cambio de Rol",
+      message: `¿Estás seguro que deseas cambiar el rol de este usuario a ${newRole.toUpperCase()}? El acceso administrativo otorga control total sobre la plataforma.`,
+      onConfirm: async () => {
+        setUpdatingId(uid);
+        try {
+          await updateDoc(doc(db, 'users', uid), { role: newRole });
+          setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role: newRole } : u));
+        } catch (err) {
+          console.error('Error updating role:', err);
+        } finally {
+          setUpdatingId(null);
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   const getPlanBadge = (plan?: string) => {
@@ -2440,6 +2510,50 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
 
   return (
     <div className="space-y-6">
+      <AnimatePresence>
+        {confirmConfig && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmConfig(null)}
+              className="absolute inset-0 bg-[#191970]/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative card-atelier w-full max-w-md p-8 border-none shadow-2xl"
+            >
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-primary/5 flex items-center justify-center text-primary">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h3 className="title-atelier text-primary">{confirmConfig.title}</h3>
+              </div>
+              <p className="body-atelier text-high-contrast/70 mb-8 leading-relaxed">
+                {confirmConfig.message}
+              </p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setConfirmConfig(null)}
+                  className="flex-1 btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmConfig.onConfirm}
+                  className="flex-1 btn-primary"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div>
         <h2 className="text-3xl font-bold text-primary tracking-tight">Gestión de Usuarios</h2>
         <p className="text-high-contrast/60 text-sm mt-1 font-medium">
@@ -2465,9 +2579,11 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
               <div>
                 <p className="text-base font-bold text-primary">{u.displayName}</p>
                 <p className="text-xs font-medium text-high-contrast/60">{u.email}</p>
-                {u.specialty && (
-                  <p className="text-[10px] font-black uppercase tracking-widest text-secondary mt-1">{u.specialty}</p>
-                )}
+                <div className="flex items-center gap-2 mt-1">
+                  {u.specialty && (
+                    <p className="text-[10px] font-black uppercase tracking-widest text-high-contrast/30">{u.specialty}</p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2477,19 +2593,21 @@ const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
               </span>
 
               {u.email !== currentUserEmail && (
-                <div className="relative group">
-                  <select
-                    disabled={updatingId === u.uid}
-                    value={u.plan || 'free'}
-                    onChange={(e) => handleChangePlan(u.uid, e.target.value as any)}
-                    className="text-xs font-bold bg-surface-container-low border border-surface-container-high rounded-xl px-4 py-2.5 text-primary hover:bg-white hover:border-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-50 cursor-pointer appearance-none pr-10"
-                  >
-                    <option value="free">Free</option>
-                    <option value="pro">Pro</option>
-                    <option value="whitelisted">Whitelisted ✓</option>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary/40">
-                    <ChevronDown className="w-4 h-4" />
+                <div className="flex items-center gap-2">
+                  <div className="relative group">
+                    <select
+                      disabled={updatingId === u.uid}
+                      value={u.plan || 'free'}
+                      onChange={(e) => handleChangePlan(u.uid, e.target.value as any)}
+                      className="text-xs font-bold bg-surface-container-low border border-surface-container-high rounded-xl px-4 py-2.5 text-primary hover:bg-white hover:border-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-50 cursor-pointer appearance-none pr-10"
+                    >
+                      <option value="free">Free</option>
+                      <option value="pro">Pro</option>
+                      <option value="whitelisted">Whitelisted ✓</option>
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary/40">
+                      <ChevronDown className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
               )}
@@ -2528,7 +2646,9 @@ export default function App() {
   const [deleteConfig, setDeleteConfig] = useState<{ message: string, onConfirm: () => void } | null>(null);
   const [patientDateFilter, setPatientDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
 
-  const isAdmin = profile?.email ? ADMIN_EMAILS.includes(profile.email.toLowerCase().trim()) : false;
+  const isAdmin = (profile?.email || user?.email) 
+    ? ADMIN_EMAILS.includes((profile?.email || user?.email || "").toLowerCase().trim()) 
+    : false;
 
   // Form states
   const [newPatient, setNewPatient] = useState({
@@ -2578,7 +2698,14 @@ export default function App() {
             const refreshDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
             setProfile(refreshDoc.data() as UserProfile);
           } else {
-            setProfile(existingData);
+            // Ensure admin role for designated emails
+            if (ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) && existingData.role !== 'admin') {
+              const updatedData = { ...existingData, role: 'admin' as const };
+              await updateDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' });
+              setProfile(updatedData);
+            } else {
+              setProfile(existingData);
+            }
           }
 
           // Payment success detection
@@ -2596,6 +2723,7 @@ export default function App() {
             email: firebaseUser.email || '',
             photoURL: firebaseUser.photoURL || '',
             plan: 'free',
+            role: ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) ? 'admin' : 'doctor',
             consultationsThisMonth: 0,
             documentsThisMonth: 0,
             aiMessagesThisMonth: 0,
