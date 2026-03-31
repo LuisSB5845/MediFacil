@@ -35,11 +35,9 @@ import {
   handleFirestoreError,
   testConnection 
 } from './lib/firebase';
-import { 
-  generateClinicalDocument, 
-  analyzeMedicalImage, 
-  createChat 
-} from './lib/gemini';
+import {
+  generateClinicalDocumentStream
+} from './lib/ai';
 import { cn } from './lib/utils';
 import { 
   LayoutDashboard, 
@@ -1471,10 +1469,17 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
     }
 
     setIsGenerating(true);
+    setClinicalDoc(""); // Clear previous content
+
     try {
-      const doc = await generateClinicalDocument(dictation, `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`);
-      setClinicalDoc(doc);
-      
+      await generateClinicalDocumentStream(
+        dictation,
+        `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`,
+        (streamedText) => {
+          setClinicalDoc(streamedText); // Update in real-time
+        }
+      );
+
       // Increment usage
       if (profile) {
         await incrementAIUsage(profile.uid, profile.aiMessagesThisMonth || 0);

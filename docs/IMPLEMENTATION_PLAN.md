@@ -1,152 +1,63 @@
-# Implementation Plan: Sistema de Suscripción y Límites de Uso - MediFácil
+# Plan de Implementación: Migración a Vercel AI SDK (Patrón Midudev)
 
-**Fecha:** 2026-03-30
-**Estado:** Pendiente de aprobación
+Este plan describe la transición del sistema de IA actual a un framework más flexible y potente basado en el **Vercel AI SDK**. Esto permitirá respuestas en tiempo real (streaming) y la facilidad de cambiar entre proveedores de modelos (Google Gemini, OpenAI, Claude, etc.) casi instantáneamente.
 
----
+## User Review Required
 
-## Resumen
+> [!IMPORTANT]
+> **Cambio en la Experiencia de Usuario**: La IA ya no responderá de golpe tras esperar 5-10 segundos. Ahora verás cómo la respuesta se escribe palabra por palabra en la pantalla (Streaming).
+> **Dependencias**: Se añadirán `ai` y `@ai-sdk/google` al backend.
 
-Implementar un sistema completo de gestión de suscripciones que controle el acceso a las funcionalidades de IA basado en el plan del usuario, con límites mensuales de uso y UI para visualizar el consumo.
-
----
-
-## Planes y Límites Propuestos
-
-| Plan | Consultas IA/mes | Generación Documentos | Precio |
-|------|------------------|----------------------|--------|
-| **Free** | 20 | 5 | $0 |
-| **Pro** | 100 | 50 | $9.99/mes |
-| **Whitelisted** | Ilimitado | Ilimitado | N/A (Admin) |
+## Proposed Changes
 
 ---
 
-## Fase 1: Backend - Tracking de Uso
+### [Component] Backend: Arquitectura Agnóstica de IA
 
-### 1.1 Actualizar Interfaz UserProfile
-```typescript
-interface UserProfile {
-  // ... campos existentes
-  plan: 'free' | 'pro' | 'whitelisted';
-  usageThisMonth: number;
-  usageLastReset: Date; // Fecha del último reset
-}
-```
+Migraremos de la librería específica de Google a una abstracción que permite el intercambio de modelos.
 
-### 1.2 Función para verificar y incrementar uso
-- Crear `src/lib/usageLimits.ts`
-- Función `canUseAI(user: UserProfile): boolean`
-- Función `incrementUsage(user: UserProfile): Promise<void>`
-- Función `resetMonthlyUsage(): Promise<void>`
+#### [MODIFY] [package.json](file:///c:/Users/andro/OneDrive/Documents/ME/PROYECTOS/MediFacil/MediFacil/backend/package.json)
+- Añadir `ai` y `@ai-sdk/google`.
+- Mantener `@google/generative-ai` por compatibilidad temporal si es necesario.
 
-### 1.3 Integrar en llamadas de IA
-- Modificar `AIAssistant` para verificar límites
-- Modificar `DocumentGenerator` para verificar límites
-- Mostrar mensaje cuando se excede el límite
+#### [MODIFY] [server.ts](file:///c:/Users/andro/OneDrive/Documents/ME/PROYECTOS/MediFacil/MediFacil/backend/src/server.ts)
+- Implementar `streamText` del Vercel AI SDK.
+- Configurar el modelo usando una variable de entorno `AI_MODEL` (ej. `google('gemini-1.5-flash')`).
+- Habilitar el streaming de texto hacia el cliente.
 
 ---
 
-## Fase 2: UI - Indicadores de Uso
+### [Component] Frontend: Consumo de Datos en Tiempo Real
 
-### 2.1 Componente UsageIndicator
-- Barra de progreso mostrando consumo
-- Número de consultas restantes
-- Badge del plan actual
-- Ubicación: Header o Dashboard
+Actualizaremos el cliente de IA para que pueda leer y procesar flujos de datos (streams).
 
-### 2.2 Actualizar Dashboard
-- Mostrar uso actual en las métricas
-- Añadir card de "Consultas IA Restantes"
+#### [NEW] [ai.ts](file:///c:/Users/andro/OneDrive/Documents/ME/PROYECTOS/MediFacil/MediFacil/frontend/src/lib/ai.ts)
+- Nuevo cliente que utiliza `fetch` y `TextDecoder` para leer el stream del backend.
+- Reemplazará gradualmente a `gemini.ts`.
 
-### 2.3 Modal de Límite Alcanzado
-- Mostrar cuando el usuario excede su límite
-- Opción de upgrade a Pro
-- Botón para ver planes
+#### [MODIFY] [NuevaConsulta.tsx](file:///c:/Users/andro/OneDrive/Documents/ME/PROYECTOS/MediFacil/MediFacil/frontend/src/pages/NuevaConsulta.tsx) (u otro componente relevante)
+- Actualizar la lógica del botón "Analizar" para que el texto se actualice dinámicamente mientras llega de la IA.
 
 ---
 
-## Fase 3: Sistema de Pagos (Opcional)
+### [Component] Gestión de Configuración
 
-### 3.1 Integración con Stripe
-- Crear cuenta de Stripe
-- Configurar webhooks para pagos
-- Productos: Free, Pro
-
-### 3.2 Flujo de Upgrade
-- Página de planes con precios
-- Checkout de Stripe
-- Actualización automática del plan
-
-### 3.3 Gestión de Suscripciones
-- Cancelar suscripción
-- Downgrade al final del período
-- Historial de pagos
+#### [MODIFY] [.env](file:///c:/Users/andro/OneDrive/Documents/ME/PROYECTOS/MediFacil/MediFacil/backend/src/.env)
+- Añadir `AI_MODEL_NAME=gemini-1.5-flash`.
 
 ---
 
-## Archivos a Crear/Modificar
+## Open Questions
 
-### Nuevos Archivos
-```
-src/lib/usageLimits.ts        - Lógica de límites
-src/components/UsageIndicator.tsx - UI de uso
-src/components/UpgradeModal.tsx    - Modal de upgrade
-src/components/PlansPage.tsx       - Página de planes
-src/lib/stripe.ts                  - Integración Stripe (Fase 3)
-```
+1. **¿Deseas soporte para otros modelos ahora mismo (ej. GPT-4)?** Si es así, necesitaré que añadas la `OPENAI_API_KEY` a tu `.env` de Railway. Por ahora, el plan se centrará en Gemini pero usando el nuevo framework.
+2. **¿Quieres que el efecto de streaming sea "palabra por palabra" o "bloque por bloque"?** (Por defecto será palabra por palabra para una sensación de mayor velocidad).
 
-### Archivos a Modificar
-```
-src/App.tsx              - Integrar usage limits
-src/lib/gemini.ts        - Añadir verificación de uso
-src/components/PaymentPlans.tsx - Actualizar con planes reales
-```
+## Verification Plan
 
----
+### Automated Tests
+- Verificar que el endpoint `/api/ai/analyze` devuelva una cabecera `Content-Type: text/plain; charset=utf-8` indicando streaming.
+- Validar mediante scripts que el stream sea legible y no esté corrupto.
 
-## Estimación de Tiempo
-
-| Fase | Tiempo | Complejidad |
-|------|--------|-------------|
-| Fase 1: Backend | 2-3 horas | Media |
-| Fase 2: UI | 2-3 horas | Baja |
-| Fase 3: Pagos | 4-6 horas | Alta |
-| **Total** | **8-12 horas** | |
-
----
-
-## Dependencias
-
-- Firebase Firestore (ya configurado)
-- Stripe account (para Fase 3)
-- Variable de entorno `STRIPE_SECRET_KEY`
-
----
-
-## Orden de Implementación Recomendado
-
-1. ✅ Fase 1.1 - Actualizar interfaz (ya parcialmente hecho)
-2. ⬜ Fase 1.2 - Crear `usageLimits.ts`
-3. ⬜ Fase 1.3 - Integrar en AI y Documentos
-4. ⬜ Fase 2.1 - Crear `UsageIndicator`
-5. ⬜ Fase 2.2 - Actualizar Dashboard
-6. ⬜ Fase 2.3 - Modal de límite
-7. ⬜ Fase 3 - Sistema de pagos (opcional)
-
----
-
-## Preguntas para el Usuario
-
-1. **¿Los límites se resetean automáticamente cada mes?** → Sí, recomendado
-2. **¿El plan "whitelisted" es solo para admins o también para usuarios especiales?** → Confirmar
-3. **¿Implementar Stripe en esta fase o dejarlo para después?** → Pendiente confirmación
-4. **¿Qué pasa cuando el usuario excede el límite?** → ¿Bloquear o permitir con advertencia?
-
----
-
-## Próximos Pasos
-
-Una vez aprobado el plan, comenzar con:
-1. Crear `src/lib/usageLimits.ts`
-2. Modificar `AIAssistant` para verificar límites
-3. Actualizar `newProfile` para incluir `usageThisMonth: 0`
+### Manual Verification
+- Abrir la consola de red en el navegador y verificar que la petición a la IA se mantenga "Pendiente" mientras los datos fluyen (Status 200 pero descargando).
+- Confirmar visualmente que el texto en la UI se actualiza en tiempo real.

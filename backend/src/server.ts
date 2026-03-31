@@ -1,12 +1,15 @@
+import { streamText } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import { z } from 'zod';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import path from 'path';
 import { fileURLToPath } from 'url';
+import logger from './utils/logger.js';
+import { sendDiscordAlert } from './utils/alerts.js';
 
 // Configuración de variables de entorno
 const __filename = fileURLToPath(import.meta.url);
@@ -16,17 +19,48 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Inicializar Gemini en el Backend
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const aiModel = genAI.getGenerativeModel({ 
-  model: "gemini-1.5-flash-latest",
-  generationConfig: { responseMimeType: "application/json" }
+// Inicializar el proveedor de Google SDK
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY || "",
 });
+const aiModelName = process.env.AI_MODEL_NAME || "gemini-1.5-flash";
 
 
 // 1. CONFIGURACIÓN DE SEGURIDAD (Helmet)
 // Añade cabeceras de seguridad HTTP (XSS, Clickjacking, etc.)
 app.use(helmet());
+
+// -- MIDDLEWARE DE MONITORIZACIÓN Y LOGGING --
+
+// Registro de cada petición entrante y monitoreo de tiempo de respuesta
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // LOG: Petición recibida (INFO)
+  logger.info(`HTTP ${req.method} ${req.url}`, { 
+    context: { ip: req.ip, userAgent: req.get('User-Agent') } 
+  });
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    
+    // LOG: Desempeño (WARN si es lento > 1000ms)
+    if (duration > 1000) {
+      const slowMsg = `Slow Query detected: ${req.method} ${req.url} took ${duration}ms`;
+      logger.warn(slowMsg);
+      // Opcional: Alerta si es crítico (ej: > 5s)
+      if (duration > 5000) {
+        sendDiscordAlert({
+          title: 'Performance Critical',
+          message: slowMsg,
+          level: 'warn'
+        });
+      }
+    }
+  });
+
+  next();
+});
 
 // 2. POLÍTICA CORS
 // Restringe quién puede llamar a esta API
@@ -99,35 +133,48 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
     Context: ${context || "None provided"}
     Prompt: ${prompt}
     
-    Return the response in JSON format with the following structure:
-    {
-      "patientName": "string",
-      "date": "string",
-      "findings": "string",
-      "diagnosis": "string",
-      "plan": "string",
-      "vitals": {
-        "bloodPressure": "string",
-        "heartRate": "number"
-      }
-    }`;
+    Return the response in a clear, narrative clinical assistant style.
+    Do NOT include technical instructions or JSON markers unless specifically asked.`;
 
-    const result = await aiModel.generateContent(fullPrompt);
-    const response = await result.response;
-    res.status(200).json(JSON.parse(response.text()));
-  } catch (error) {
-    console.error("Error calling Gemini:", error);
-    res.status(500).json({ error: 'Error procesando solicitud de IA' });
+    const result = streamText({
+      model: google(aiModelName),
+      prompt: fullPrompt,
+    });
+
+    // Enviar el stream al cliente
+    result.pipeTextStreamToResponse(res);
+
+  } catch (error: any) {
+    logger.error("Error calling AI SDK:", { error: error.message, stack: error.stack });
+    
+    sendDiscordAlert({
+      title: 'AI SDK Failure',
+      message: 'Critical error while processing streaming AI request.',
+      level: 'error',
+      context: { errMsg: error.message, path: '/api/ai/analyze' }
+    });
+
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error procesando solicitud de IA en tiempo real' });
+    }
   }
 });
 
 
 // Manejo de Errores Global (No revela detalles internos)
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
+  logger.error("Unhandled Global Error:", { error: err.message, stack: err.stack });
+  
+  sendDiscordAlert({
+    title: 'Unhandled Server Error',
+    message: err.message || 'Unknown error',
+    level: 'error',
+    context: { path: req.url, method: req.method }
+  });
+
   res.status(500).json({ error: 'Ocurrió un error interno en el servidor.' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor seguro escuchando en http://localhost:${PORT}`);
+  logger.info(`🚀 Servidor seguro escuchando en puerto ${PORT}`, { context: { environment: process.env.NODE_ENV } });
 });
