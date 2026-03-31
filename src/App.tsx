@@ -85,7 +85,9 @@ import {
   Lightbulb,
   QrCode,
   PenTool,
-  CreditCard
+  CreditCard,
+  FolderOpen,
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -98,6 +100,673 @@ import {
 } from './lib/usageLimits';
 
 const ADMIN_EMAILS = ["androxus512rbm@gmail.com", "luise.sb5845@gmail.com"];
+
+const STRIPE_MONTHLY_URL = "https://buy.stripe.com/test_28E3cxfmlb6Ha5b6zz6kg04";
+const STRIPE_YEARLY_URL = "https://buy.stripe.com/test_14A28tded4Ija5b3nn6kg05";
+
+// --- Animation Components ---
+
+const ScrollProgressBar = () => {
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  useEffect(() => {
+    const updateScroll = () => {
+      const currentScroll = window.scrollY;
+      const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (scrollHeight > 0) {
+        setScrollProgress((currentScroll / scrollHeight) * 100);
+      }
+    };
+    window.addEventListener("scroll", updateScroll);
+    return () => window.removeEventListener("scroll", updateScroll);
+  }, []);
+
+  return (
+    <div className="fixed top-0 left-0 w-full h-0.5 z-[200] pointer-events-none">
+      <motion.div 
+        className="h-full sidebar-gradient"
+        style={{ width: `${scrollProgress}%` }}
+      />
+    </div>
+  );
+};
+
+const CursorTrailer = () => {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setPosition({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  return (
+    <motion.div
+      className="fixed top-0 left-0 w-2 h-2 bg-[#191970]/40 rounded-full z-[300] pointer-events-none hidden md:block"
+      animate={{ x: position.x - 4, y: position.y - 4 }}
+      transition={{ type: "spring", stiffness: 500, damping: 28, mass: 0.5 }}
+    />
+  );
+};
+
+const Typewriter = ({ text, delay = 0 }: { text: string; delay?: number }) => {
+  const words = text.split(" ");
+  
+  const container = {
+    hidden: { opacity: 0 },
+    visible: (i = 1) => ({
+      opacity: 1,
+      transition: { staggerChildren: 0.12, delayChildren: delay * i },
+    }),
+  } as const;
+
+  const child = {
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: "spring",
+        damping: 12,
+        stiffness: 100,
+      },
+    },
+    hidden: {
+      opacity: 0,
+      y: 20,
+      transition: {
+        type: "spring",
+        damping: 12,
+        stiffness: 100,
+      },
+    },
+  } as const;
+
+  return (
+    <motion.div
+      style={{ overflow: "hidden", display: "flex", flexWrap: "wrap" }}
+      variants={container}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true }}
+    >
+      {words.map((word, index) => (
+        <motion.span
+          variants={child}
+          style={{ marginRight: "12px" }}
+          key={index}
+        >
+          {word}
+        </motion.span>
+      ))}
+    </motion.div>
+  );
+};
+
+const CountUp = ({ value, duration = 2 }: { value: number; duration?: number }) => {
+  const [count, setCount] = useState(0);
+  const ref = useRef(null);
+  const isInView = useMemo(() => true, []); // Simplified for now or use useInView from framer-motion if version supports
+
+  useEffect(() => {
+    let start = 0;
+    const end = value;
+    const totalMiliseconds = duration * 1000;
+    const incrementTime = totalMiliseconds / end;
+
+    const timer = setInterval(() => {
+      start += 1;
+      setCount(start);
+      if (start === end) clearInterval(timer);
+    }, incrementTime);
+
+    return () => clearInterval(timer);
+  }, [value, duration]);
+
+  return <span>{count}</span>;
+};
+
+const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 50);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const benefits = [
+    {
+      icon: FolderOpen,
+      title: "Expedientes completos",
+      description: "Historial clínico, alergias, consultas anteriores y datos del paciente en un solo lugar."
+    },
+    {
+      icon: Stethoscope,
+      title: "Consultas sin fricción",
+      description: "Registra hallazgos, diagnósticos y planes de tratamiento en segundos. Sin formularios complejos."
+    },
+    {
+      icon: Bot,
+      title: "IA clínica integrada",
+      description: "Consulta dudas clínicas, redacta documentos y verifica información con un asistente entrenado para el entorno médico."
+    },
+    {
+      icon: FileText,
+      title: "Documentos en segundos",
+      description: "Genera plantillas médicas personalizadas basadas en el perfil del paciente con un solo clic."
+    }
+  ];
+
+  const [formSubmitted, setFormSubmitted] = useState(false);
+
+  const handleContactSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormSubmitted(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F3F4F5] font-manrope selection:bg-primary/10 selection:text-primary overflow-x-hidden">
+      <ScrollProgressBar />
+      <CursorTrailer />
+
+      {/* NAVBAR */}
+      <nav className={cn(
+        "fixed top-0 inset-x-0 z-[100] transition-all duration-500 px-6 py-4",
+        scrolled ? "bg-white/80 backdrop-blur-xl border-b border-black/5 shadow-lg" : "bg-transparent"
+      )}>
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <motion.div 
+            animate={{ scale: scrolled ? 0.9 : 1 }}
+            className="flex items-center gap-3"
+          >
+            <div className="w-10 h-10 rounded-xl sidebar-gradient flex items-center justify-center shadow-lg shadow-primary/20 hover:shadow-white/20 transition-shadow duration-300">
+              <BriefcaseMedical className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-[#191970] leading-none">MediFácil</h1>
+              <p className="text-[10px] font-black text-[#191970]/40 uppercase tracking-[0.2em] mt-1">The Clinical Atelier</p>
+            </div>
+          </motion.div>
+
+          <div className="hidden md:flex items-center gap-8">
+            <button onClick={onLogin} className="relative text-sm font-bold text-[#191970]/60 hover:text-[#191970] transition-colors group">
+              Iniciar sesión
+              <span className="absolute -bottom-1 left-1/2 w-0 h-0.5 bg-primary group-hover:w-full group-hover:left-0 transition-all duration-300" />
+            </button>
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onLogin} 
+              className="px-6 py-2.5 sidebar-gradient text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20"
+            >
+              Comenzar gratis
+            </motion.button>
+          </div>
+          
+          <button className="md:hidden p-2 text-primary">
+            <Menu className="w-6 h-6" />
+          </button>
+        </div>
+      </nav>
+
+      <header className="relative min-h-[100vh] flex items-center justify-center pt-20 overflow-hidden sidebar-gradient animate-aurora">
+        {/* Decorative Elements */}
+        <div className="absolute top-20 left-10 w-64 h-64 bg-white/5 rounded-full border border-white/5 blur-sm rotate-animation pointer-events-none" style={{ animation: 'aurora 20s linear infinite' }}></div>
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-white/5 rounded-full border border-white/5 blur-sm rotate-animation-reverse pointer-events-none" style={{ animation: 'aurora 15s linear infinite reverse' }}></div>
+        
+        {/* Background Patterns */}
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_white_1px,_transparent_1px)] bg-[size:32px_32px]"></div>
+
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center relative z-10">
+          <div className="text-white space-y-8">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full border border-white/10 backdrop-blur-md"
+            >
+              <Sparkles className="w-3 h-3 text-secondary" />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Para Médicos Profesionales</span>
+            </motion.div>
+            
+            <h2 className="text-5xl md:text-7xl font-black leading-[1.1] tracking-tight min-h-[2.2em]">
+              <Typewriter text="Tu consulta merece una herramienta a su altura." />
+            </h2>
+            
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.2, duration: 0.8 }}
+              className="text-lg md:text-xl text-white/70 font-medium leading-relaxed max-w-xl"
+            >
+              Gestiona expedientes, consultas y documentos clínicos con la precisión de un atelier. Simple, seguro y pensado para médicos.
+            </motion.p>
+            
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.6, type: "spring", stiffness: 200, damping: 20 }}
+              className="flex flex-wrap items-center gap-4 pt-4"
+            >
+              <button 
+                onClick={onLogin}
+                className="px-8 py-4 bg-white text-[#191970] text-sm font-black uppercase tracking-widest rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all"
+              >
+                Comenzar gratis
+              </button>
+              <a 
+                href="#planes"
+                className="px-8 py-4 bg-transparent border border-white/20 text-white text-sm font-black uppercase tracking-widest rounded-2xl hover:bg-white/5 transition-all"
+              >
+                Ver planes →
+              </a>
+            </motion.div>
+          </div>
+
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8, y: 50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 1 }}
+            className="hidden lg:block relative animate-float"
+          >
+            {/* Mockup Presentation */}
+            <div className="relative z-10 w-full aspect-video bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 overflow-hidden group">
+               <div className="flex items-center gap-4 mb-8">
+                  <div className="w-3 h-3 rounded-full bg-red-400/80 shadow-[0_0_10px_rgba(248,113,113,0.4)]" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-400/80 shadow-[0_0_10px_rgba(250,204,21,0.4)]" />
+                  <div className="w-3 h-3 rounded-full bg-green-400/80 shadow-[0_0_10px_rgba(74,222,128,0.4)]" />
+               </div>
+               <div className="space-y-4">
+                  <div className="w-1/2 h-8 bg-white/10 rounded-lg animate-pulse" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="h-24 bg-white/5 rounded-2xl border border-white/10 group-hover:bg-white/10 transition-colors duration-500" />
+                    <div className="h-24 bg-white/5 rounded-2xl border border-white/10 group-hover:bg-white/10 transition-colors duration-500" />
+                  </div>
+                  <div className="h-40 bg-white/5 rounded-2xl border border-white/10 group-hover:bg-white/10 transition-colors duration-500" />
+               </div>
+            </div>
+            
+            {/* Decorative circles */}
+            <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/5 backdrop-blur-xl border border-white/20 rounded-3xl rotate-12 flex items-center justify-center shadow-2xl animate-float" style={{ animationDelay: '1s' }}>
+              <Stethoscope className="w-16 h-16 text-white/50" />
+            </div>
+            
+            <motion.div 
+              whileHover={{ scale: 1.1 }}
+              className="absolute -bottom-6 -left-6 px-6 py-4 bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl flex items-center gap-4 cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
+                <BadgeCheck className="w-6 h-6 text-secondary" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Seguridad</p>
+                <p className="text-sm font-bold text-white tracking-tight">Datos Encriptados</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+
+        {/* Waves Separator */}
+        <div className="absolute bottom-0 inset-x-0 h-32 bg-gradient-to-t from-[#F3F4F5] to-transparent"></div>
+      </header>
+
+      <section className="py-32 px-6 bg-[#F3F4F5] relative overflow-hidden">
+        <div className="max-w-7xl mx-auto space-y-20">
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center space-y-4"
+          >
+            <p className="label-atelier text-primary tracking-[0.3em]">Beneficios</p>
+            <h3 className="headline-atelier text-[#191970]">Diseñado para la excelencia médica</h3>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {benefits.map((benefit, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: idx * 0.15 }}
+                whileHover={{ y: -10, scale: 1.04, boxShadow: "0 0 30px rgba(25, 25, 112, 0.15)" }}
+                className="group p-8 rounded-[2.5rem] bg-white border border-black/5 shadow-signature transition-all duration-300"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center mb-8 group-hover:sidebar-gradient group-hover:shadow-lg group-hover:shadow-primary/20 group-hover:animate-pulse-slow transition-all">
+                  <motion.div whileHover={{ rotate: 360 }} transition={{ duration: 0.8 }}>
+                    <benefit.icon className="w-7 h-7 text-primary group-hover:text-white transition-colors" />
+                  </motion.div>
+                </div>
+                <h4 className="title-atelier text-[#191970] mb-4">{benefit.title}</h4>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  {benefit.description}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="planes" className="py-32 px-6 sidebar-gradient relative overflow-hidden">
+        {/* SVG Animated Lines Background */}
+        <div className="absolute inset-0 pointer-events-none opacity-10">
+          <svg className="w-full h-full" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+            <motion.path 
+              d="M0,500 C200,400 300,600 500,500 C700,400 800,600 1000,500" 
+              fill="none" stroke="white" strokeWidth="2"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 3, repeat: Infinity, repeatType: "reverse" }}
+            />
+            <motion.path 
+              d="M0,300 C200,200 300,400 500,300 C700,200 800,400 1000,300" 
+              fill="none" stroke="white" strokeWidth="1"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 4, delay: 1, repeat: Infinity, repeatType: "reverse" }}
+            />
+          </svg>
+        </div>
+        
+        <div className="max-w-7xl mx-auto space-y-20 relative z-10">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            className="text-center space-y-4"
+          >
+            <h3 className="headline-atelier text-white">Elige tu plan</h3>
+            <p className="text-lg text-white/60 font-medium">Comienza gratis, escala cuando lo necesites.</p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 items-center">
+            {/* PLAN FREE */}
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              whileHover={{ scale: 1.03, boxShadow: "0 20px 60px rgba(25,25,112,0.25)" }}
+              className="p-10 rounded-[3rem] bg-white/5 backdrop-blur-xl border border-white/10 text-white space-y-10 flex flex-col"
+            >
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Gratis</span>
+                <h4 className="text-4xl font-black">$0</h4>
+              </div>
+              <ul className="space-y-6 flex-grow">
+                {[
+                  "15 pacientes total",
+                  "20 consultas/mes",
+                  "5 documentos/mes",
+                  "20 mensajes de IA/mes"
+                ].map((f, i) => (
+                  <motion.li 
+                    key={i} 
+                    initial={{ opacity: 0, x: -10 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.4 + i*0.1 }}
+                    className="flex items-center gap-3 text-sm font-semibold text-white/80"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-secondary flex-shrink-0" />
+                    {f}
+                  </motion.li>
+                ))}
+              </ul>
+              <button 
+                onClick={onLogin}
+                className="w-full h-14 rounded-2xl bg-white/10 border border-white/10 text-white text-xs font-black uppercase tracking-widest hover:bg-white/20 transition-all active:scale-95"
+              >
+                Comenzar gratis
+              </button>
+            </motion.div>
+
+            {/* PLAN MÉDICO - POPULAR */}
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              whileHover={{ scale: 1.03, boxShadow: "0 20px 60px rgba(25,25,112,0.3)" }}
+              className="p-12 rounded-[3.5rem] bg-white/10 backdrop-blur-2xl border border-white/30 text-white space-y-10 flex flex-col scale-105 shadow-2xl relative overflow-hidden group"
+            >
+              {/* Shimmer border wrapper */}
+              <div className="absolute inset-0 shimmer-border opacity-30 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+              <div className="relative z-10">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-secondary text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg animate-pulse">
+                  Más Popular
+                </div>
+                <div className="space-y-2 mt-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Plan Médico</span>
+                  <div className="flex items-baseline gap-1">
+                    <h4 className="text-5xl font-black">
+                      $<CountUp value={12} />
+                    </h4>
+                    <span className="text-white/40 font-bold">/mes</span>
+                  </div>
+                </div>
+                <ul className="space-y-6 flex-grow my-10">
+                  {[
+                    "Pacientes ilimitados",
+                    "Consultas ilimitadas",
+                    "Documentos ilimitados",
+                    "IA ilimitada",
+                    "Soporte prioritario"
+                  ].map((f, i) => (
+                    <motion.li 
+                      key={i} 
+                      initial={{ opacity: 0, x: -10 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.5 + i*0.1 }}
+                      className="flex items-center gap-3 text-sm font-semibold"
+                    >
+                      <CheckCircle2 className="w-5 h-5 text-secondary flex-shrink-0" />
+                      {f}
+                    </motion.li>
+                  ))}
+                </ul>
+                <a 
+                  href={STRIPE_MONTHLY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full h-16 rounded-3xl bg-white text-[#191970] flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl relative overflow-hidden group/btn"
+                >
+                  <span className="relative z-10">Elegir Plan Médico</span>
+                  <motion.div 
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent -translate-x-full"
+                    animate={{ translateX: ["100%", "-100%"] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  />
+                </a>
+              </div>
+            </motion.div>
+
+            {/* PLAN CLÍNICA */}
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              whileHover={{ scale: 1.03, boxShadow: "0 20px 60px rgba(25,25,112,0.25)" }}
+              className="p-10 rounded-[3rem] bg-white/5 backdrop-blur-xl border border-white/10 text-white space-y-10 flex flex-col"
+            >
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#A3E635]">Ahorra 30%</span>
+                <div className="flex items-baseline gap-1">
+                  <h4 className="text-4xl font-black">$99</h4>
+                  <span className="text-white/40 font-bold">/año</span>
+                </div>
+                <p className="text-[10px] font-bold text-white/30 tracking-widest uppercase">~$8.25/mes</p>
+              </div>
+              <ul className="space-y-6 flex-grow">
+                {[
+                  "Todo lo del Plan Médico",
+                  "Badge Doctor Pro ✦",
+                  "Acceso anticipado a nuevas funciones"
+                ].map((f, i) => (
+                  <motion.li 
+                    key={i} 
+                    initial={{ opacity: 0, x: -10 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.6 + i*0.1 }}
+                    className="flex items-center gap-3 text-sm font-semibold text-white/80"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-secondary flex-shrink-0" />
+                    {f}
+                  </motion.li>
+                ))}
+              </ul>
+              <a 
+                href={STRIPE_YEARLY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full h-14 rounded-2xl bg-white/10 border border-white/10 text-white text-xs font-black uppercase tracking-widest hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center"
+              >
+                Elegir Plan Anual Médico
+              </a>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-32 px-6 bg-[#F3F4F5]">
+        <div className="max-w-4xl mx-auto space-y-16">
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center space-y-4"
+          >
+            <h3 className="headline-atelier text-[#191970]">¿Tienes preguntas?</h3>
+            <p className="text-lg text-slate-500 font-medium">Estamos aquí para ayudarte.</p>
+          </motion.div>
+
+          <div className="perspective-1000">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              animate={formSubmitted ? { rotateY: 180 } : {}}
+              transition={{ duration: 0.8, type: "spring" }}
+              className="relative p-10 rounded-[3rem] bg-white border border-black/5 shadow-signature min-h-[400px] flex items-center justify-center overflow-hidden"
+              style={{ transformStyle: 'preserve-3d' }}
+            >
+              {/* Front: Form */}
+              <div 
+                className="w-full h-full backface-hidden"
+                style={{ backfaceVisibility: 'hidden' }}
+              >
+                <form onSubmit={handleContactSubmit} className={cn("space-y-6 transition-opacity duration-500", formSubmitted && "opacity-0 pointer-events-none")}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2 group">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-[#191970]/40 px-1 group-focus-within:text-primary transition-colors">Nombre</label>
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Dr. Julián Rivera"
+                        className="w-full h-14 bg-slate-50 border-none rounded-2xl px-6 font-semibold focus:ring-2 focus:ring-primary/15 transition-all outline-none placeholder:text-black/10" 
+                      />
+                    </div>
+                    <div className="space-y-2 group">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-[#191970]/40 px-1 group-focus-within:text-primary transition-colors">Email profesional</label>
+                      <input 
+                        type="email" 
+                        required 
+                        placeholder="julian@clinica.com"
+                        className="w-full h-14 bg-slate-50 border-none rounded-2xl px-6 font-semibold focus:ring-2 focus:ring-primary/15 transition-all outline-none placeholder:text-black/10" 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2 group">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#191970]/40 px-1 group-focus-within:text-primary transition-colors">Mensaje</label>
+                    <textarea 
+                      required 
+                      rows={4} 
+                      placeholder="¿Cómo podemos ayudarte?"
+                      className="w-full py-6 bg-slate-50 border-none rounded-[2rem] px-6 font-semibold focus:ring-2 focus:ring-primary/15 transition-all resize-none outline-none placeholder:text-black/10" 
+                    />
+                  </div>
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-4">
+                    <div className="text-left">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#191970]/40">Email de contacto</p>
+                        <p className="text-sm font-bold text-primary">soporte@medifacil.app</p>
+                    </div>
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      type="submit" 
+                      className="px-12 h-16 sidebar-gradient text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-xl transition-all"
+                    >
+                      Enviar mensaje
+                    </motion.button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Back: Success Message */}
+              <div 
+                className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-10 bg-white rounded-[3rem] backface-hidden"
+                style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+              >
+                <div className="w-20 h-20 rounded-full bg-secondary/10 flex items-center justify-center mb-6">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={formSubmitted ? { scale: 1 } : {}}
+                    transition={{ type: "spring", delay: 0.5 }}
+                  >
+                    <CheckCircle2 className="w-12 h-12 text-secondary" />
+                  </motion.div>
+                </div>
+                <h4 className="title-atelier text-[#191970] mb-2">¡Mensaje Enviado!</h4>
+                <p className="text-center text-slate-500 font-medium">Gracias por contactarnos. Un especialista se comunicará contigo en menos de 24 horas.</p>
+                <button 
+                  onClick={() => setFormSubmitted(false)}
+                  className="mt-8 text-xs font-black uppercase tracking-widest text-primary/40 hover:text-primary transition-colors underline underline-offset-4"
+                >
+                  Enviar otro mensaje
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECCIÓN 5: FOOTER */}
+      <footer className="bg-[#191970] py-20 px-6 text-white/60">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+          <div className="space-y-6">
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              className="flex items-center gap-3 group cursor-pointer"
+            >
+              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors group-hover:shadow-[0_0_15px_rgba(255,255,255,0.3)]">
+                <BriefcaseMedical className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-xl font-bold text-white tracking-tight">MediFácil</h1>
+            </motion.div>
+            <p className="text-sm font-medium">© 2026 MediFácil. Todos los derechos reservados.</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-8 md:justify-end text-sm font-bold">
+            {["Términos de uso", "Privacidad", "Contacto"].map((link, i) => (
+              <a 
+                key={i} 
+                href="#" 
+                className="relative hover:text-white transition-colors group"
+              >
+                {link}
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-secondary group-hover:w-full transition-all duration-300" />
+              </a>
+            ))}
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
 
 // --- Types ---
 
@@ -143,6 +812,11 @@ interface UserProfile {
   officeLocation?: string;
   role?: 'doctor' | 'admin';
   plan?: 'free' | 'pro' | 'whitelisted';
+  consultationsThisMonth: number;
+  documentsThisMonth: number;
+  aiMessagesThisMonth: number;
+  usageResetDate: string;
+  // Legacy fields for compatibility
   usageThisMonth?: number;
   usageLastReset?: any;
 }
@@ -1854,7 +2528,7 @@ export default function App() {
   const [deleteConfig, setDeleteConfig] = useState<{ message: string, onConfirm: () => void } | null>(null);
   const [patientDateFilter, setPatientDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
 
-  const isAdmin = profile?.email ? ADMIN_EMAILS.includes(profile.email) : false;
+  const isAdmin = profile?.email ? ADMIN_EMAILS.includes(profile.email.toLowerCase().trim()) : false;
 
   // Form states
   const [newPatient, setNewPatient] = useState({
@@ -1885,43 +2559,51 @@ export default function App() {
       setUser(firebaseUser);
       if (firebaseUser) {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        let currentUserProfile: UserProfile;
-
+        
         if (userDoc.exists()) {
-          currentUserProfile = userDoc.data() as UserProfile;
+          const existingData = userDoc.data() as UserProfile;
           
-          // Check for monthly reset
-          if (shouldResetMonthlyUsage(currentUserProfile.usageLastReset)) {
-            await resetMonthlyUsage(firebaseUser.uid);
-            // Refresh profile after reset
-            const updatedDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-            currentUserProfile = updatedDoc.data() as UserProfile;
+          if (!existingData.displayName && firebaseUser.displayName) {
+            await updateDoc(doc(db, 'users', firebaseUser.uid), {
+              displayName: firebaseUser.displayName,
+              photoURL: firebaseUser.photoURL || existingData.photoURL
+            });
+            existingData.displayName = firebaseUser.displayName;
+            existingData.photoURL = firebaseUser.photoURL || existingData.photoURL;
           }
           
-          setProfile(currentUserProfile);
+          // Legacy usage reset check (keeping for safety during transition)
+          if (shouldResetMonthlyUsage(existingData.usageLastReset || existingData.usageResetDate)) {
+            await resetMonthlyUsage(firebaseUser.uid);
+            const refreshDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            setProfile(refreshDoc.data() as UserProfile);
+          } else {
+            setProfile(existingData);
+          }
 
-          // Phase 3: Spark Plan Success Detection
+          // Payment success detection
           const urlParams = new URLSearchParams(window.location.search);
-          if (urlParams.get('payment_success') === 'true' && currentUserProfile.plan === 'free') {
-            await updateDoc(doc(db, 'users', firebaseUser.uid), {
-              plan: 'pro'
-            });
-            // Refresh local profile
-            setProfile({ ...currentUserProfile, plan: 'pro' });
-            // Clean URL
+          if (urlParams.get('payment_success') === 'true' && existingData.plan === 'free') {
+            await updateDoc(doc(db, 'users', firebaseUser.uid), { plan: 'pro' });
+            setProfile({ ...existingData, plan: 'pro' });
             window.history.replaceState({}, document.title, window.location.pathname);
-            // Notify user
             alert("¡Felicidades! Tu plan ha sido actualizado a Pro exitosamente.");
           }
         } else {
           const newProfile: UserProfile = {
             uid: firebaseUser.uid,
-            displayName: firebaseUser.displayName || 'Doctor',
+            displayName: firebaseUser.displayName || '',
             email: firebaseUser.email || '',
             photoURL: firebaseUser.photoURL || '',
             plan: 'free',
-            usageThisMonth: 0,
-            usageLastReset: serverTimestamp(),
+            consultationsThisMonth: 0,
+            documentsThisMonth: 0,
+            aiMessagesThisMonth: 0,
+            usageResetDate: new Date(
+              new Date().getFullYear(), 
+              new Date().getMonth() + 1, 
+              1
+            ).toISOString()
           };
           await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
           setProfile(newProfile);
@@ -2108,31 +2790,7 @@ export default function App() {
   }
 
   if (!user) {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-surface-low p-8">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white p-10 rounded-3xl shadow-ambient text-center space-y-8"
-        >
-          <div className="w-20 h-20 rounded-2xl sidebar-gradient mx-auto flex items-center justify-center shadow-xl">
-            <Stethoscope className="text-white w-10 h-10" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="title-atelier text-3xl text-primary">MediFácil</h1>
-            <p className="label-atelier text-high-contrast/60 uppercase tracking-widest">Clinical Atelier Dashboard</p>
-          </div>
-          <p className="body-atelier text-sm text-high-contrast/60">Inicie sesión con su cuenta profesional para acceder al panel de control clínico.</p>
-          <button 
-            onClick={handleLogin}
-            className="btn-primary w-full py-4 flex items-center justify-center gap-3"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-            Continuar con Google
-          </button>
-        </motion.div>
-      </div>
-    );
+    return <LandingPage onLogin={handleLogin} />;
   }
 
   return (

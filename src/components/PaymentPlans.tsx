@@ -135,8 +135,8 @@ const PaymentPlans = ({ user }: { user: any }) => {
       gradient: "from-slate-400 to-slate-600"
     },
     {
-      name: "Plan Mensual Médico",
-      price: "$9.99",
+      name: "Plan Médico",
+      price: "$12",
       interval: "/mes",
       description: "Potencia tu práctica con el asistente de IA avanzado y registros ilimitados.",
       features: [
@@ -154,7 +154,7 @@ const PaymentPlans = ({ user }: { user: any }) => {
     },
     {
       name: "Plan Anual Médico",
-      price: "$99.99",
+      price: "$99",
       interval: "/año",
       description: "Digitaliza tu clínica completa con ahorros significativos y máxima potencia.",
       features: [
