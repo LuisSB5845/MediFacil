@@ -5,9 +5,9 @@ const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(apiKey);
 
 export const models = {
-  pro: "gemini-1.5-pro",
-  flash: "gemini-1.5-flash",
-  image: "gemini-1.5-flash", 
+  pro: "gemini-1.5-flash-latest",
+  flash: "gemini-1.5-flash-latest",
+  image: "gemini-1.5-flash-latest", 
 };
 
 /**
