@@ -4,15 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite frontend --port=3000 --host=0.0.0.0",
+    "dev:frontend": "vite frontend --port=3000 --host=0.0.0.0",
+    "dev:backend": "tsx watch backend/src/server.ts",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "build": "vite build frontend",
     "preview": "vite preview frontend",
     "clean": "rm -rf frontend/dist",
     "lint": "tsc --noEmit -p frontend/tsconfig.json"
+
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "concurrently": "^9.1.2",
     "@tailwindcss/vite": "^4.1.14",
+
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",

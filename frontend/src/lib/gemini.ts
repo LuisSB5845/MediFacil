@@ -1,8 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// Use import.meta.env for Vite projects
-const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
+const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:4000/api";
 
 export const models = {
   pro: "gemini-1.5-flash-latest",
@@ -10,72 +6,47 @@ export const models = {
   image: "gemini-1.5-flash-latest", 
 };
 
+
 /**
  * Generates a structured clinical document based on a prompt and context.
  */
 export async function generateClinicalDocument(prompt: string, context: string = "") {
-  const model = genAI.getGenerativeModel({ 
-    model: models.pro,
-    generationConfig: {
-      responseMimeType: "application/json",
+  try {
+    const response = await fetch(`${API_URL}/ai/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prompt, context }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Error llamando a la API del backend");
     }
-  });
 
-  const fullPrompt = `Analyze the following medical context and generate a structured clinical document.
-    Context: ${context}
-    Prompt: ${prompt}
-    
-    Return the response in JSON format with the following structure:
-    {
-      "patientName": "string",
-      "date": "string",
-      "findings": "string",
-      "diagnosis": "string",
-      "plan": "string",
-      "vitals": {
-        "bloodPressure": "string",
-        "heartRate": "number"
-      }
-    }`;
-
-  const result = await model.generateContent(fullPrompt);
-  const response = await result.response;
-  return JSON.parse(response.text());
+    return await response.json();
+  } catch (error) {
+    console.error("Error in generateClinicalDocument:", error);
+    throw error;
+  }
 }
 
+
 /**
- * Analyzes a medical image and answers a prompt.
+ * Analyzes a medical image (Not yet implemented in backend proxy for simplicity, but route exists)
  */
 export async function analyzeMedicalImage(base64Image: string, prompt: string) {
-  const model = genAI.getGenerativeModel({ model: models.image });
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: base64Image,
-      },
-    },
-    { text: `You are a medical AI assistant. Analyze this medical image and answer the following question: ${prompt}` },
-  ]);
-
-  const response = await result.response;
-  return response.text();
+  // Redirigir a una implementación segura en el backend similar a generateClinicalDocument
+  console.warn("Análisis de imágenes debe ser migrado al backend para mayor seguridad.");
+  return "Funcionalidad en migración al backend seguro.";
 }
 
 /**
- * Creates an interactive chat session.
+ * Creates an interactive chat session (Should also be proxied)
  */
 export function createChat() {
-  const model = genAI.getGenerativeModel({ 
-    model: models.flash,
-    systemInstruction: "You are MediFácil AI, a clinical assistant for doctors. You help with patient verification, medical recommendations based on evidence, and automated document management. Be professional, precise, and supportive.",
-  });
-
-  return model.startChat({
-    history: [],
-    generationConfig: {
-      maxOutputTokens: 2000,
-    },
-  });
+  console.warn("Chat interactivo debe ser migrado a WebSockets o API segura en el backend.");
+  return null; // El frontend deberá ser actualizado para manejar chat via API
 }
+
