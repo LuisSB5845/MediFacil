@@ -9,12 +9,18 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.54",
     "@google/generative-ai": "^0.24.1",
+    "ai": "^6.0.141",
+    "axios": "^1.14.0",
+    "axios-hooks": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -22,8 +28,8 @@
     "@types/express": "^4.17.21",
     "@types/helmet": "^0.0.48",
     "@types/node": "^22.14.0",
+    "@types/winston": "^2.4.4",
     "tsx": "^4.21.0",
     "typescript": "^5.8.2"
   }
-
 }
