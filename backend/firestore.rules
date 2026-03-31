@@ -15,26 +15,10 @@ service cloud.firestore {
     //   - photoURL: string (optional, uri format)
     //   - specialty: string (optional)
     //   - role: string (optional, enum: doctor, admin)
+    //   - plan: string (optional, enum: free, pro, whitelisted)
     //
     // Collection: patients
     // Document ID: {patientId}
-    // Fields:
-    //   - name: string (required, max 100)
-    //   - doctorUid: string (required, immutable)
-    //   - age: number (required, positive)
-    //   - gender: string (required, enum)
-    //   - bloodType: string (required)
-    //   - createdAt: timestamp (required, immutable)
-    //
-    // Collection: patients/{patientId}/consultations
-    // Document ID: {consultationId}
-    // Fields:
-    //   - patientId: string (required, immutable)
-    //   - doctorUid: string (required, immutable)
-    //   - date: timestamp (required)
-    //   - findings: string (optional, max 5000)
-    //   - diagnosis: string (optional, max 1000)
-    //   - plan: string (optional, max 2000)
     //
     // ===============================================================
 
@@ -51,38 +35,39 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "androxus512rbm@gmail.com" && request.auth.token.email_verified == true));
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          request.auth.token.email in ["androxus512rbm@gmail.com", "luise.sb5845@gmail.com"]
+        );
     }
     
     function isPatientOwner(patientId) {
-      return isAuthenticated() && get(/databases/$(database)/documents/patients/$(patientId)).data.doctorUid == request.auth.uid;
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/patients/$(patientId)) &&
+             get(/databases/$(database)/documents/patients/$(patientId)).data.doctorUid == request.auth.uid;
     }
 
     function isValidEmail(email) {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
     function isValidUser(data) {
-      return data.uid == request.auth.uid && 
+      return (data.uid == request.auth.uid || isAdmin()) && 
              isValidEmail(data.email) &&
              (!('role' in data) || data.role in ['doctor', 'admin']);
     }
 
     function isValidPatient(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.doctorUid == request.auth.uid &&
+             (data.doctorUid == request.auth.uid || isAdmin()) &&
              data.age is number && data.age >= 0 &&
              data.gender in ['Masculino', 'Femenino', 'Otro'];
     }
 
     function isValidConsultation(data, patientId) {
       return data.patientId == patientId &&
-             data.doctorUid == request.auth.uid &&
+             (data.doctorUid == request.auth.uid || isAdmin()) &&
              data.date is timestamp &&
              (!('findings' in data) || (data.findings is string && data.findings.size() <= 5000)) &&
              (!('diagnosis' in data) || (data.diagnosis is string && data.diagnosis.size() <= 1000)) &&
@@ -96,27 +81,40 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && (!('role' in request.resource.data) || request.resource.data.role == 'doctor' || isAdmin());
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      // Admin bypasses all checks for update
+      allow update: if isAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin()));
+      allow delete: if isAdmin();
     }
 
     match /patients/{patientId} {
       allow read: if isAuthenticated() && (resource.data.doctorUid == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && isValidPatient(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.doctorUid == request.auth.uid || isAdmin()) && isValidPatient(request.resource.data) && request.resource.data.doctorUid == resource.data.doctorUid;
-      allow delete: if isAuthenticated() && (resource.data.doctorUid == request.auth.uid || isAdmin());
+      allow update: if isAdmin() || (isAuthenticated() && (resource.data.doctorUid == request.auth.uid) && isValidPatient(request.resource.data));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.doctorUid == request.auth.uid);
 
       match /consultations/{consultationId} {
         allow read: if isPatientOwner(patientId) || isAdmin();
         allow create: if isPatientOwner(patientId) && isValidConsultation(request.resource.data, patientId);
-        allow update: if isPatientOwner(patientId) && isValidConsultation(request.resource.data, patientId) && request.resource.data.doctorUid == resource.data.doctorUid;
-        allow delete: if isPatientOwner(patientId) || isAdmin();
+        allow update: if isAdmin() || (isPatientOwner(patientId) && isValidConsultation(request.resource.data, patientId));
+        allow delete: if isAdmin() || isPatientOwner(patientId);
       }
     }
 
     match /users/{userId}/chat_history/{messageId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && request.resource.data.uid == request.auth.uid;
+      allow create: if (isOwner(userId) || isAdmin());
       allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // Support for top-level patients collection queries for admins
+    match /{path=**}/patients/{patientId} {
+       allow read: if isAdmin();
+    }
+
+    // Support for collectionGroup queries on consultations
+    match /{path=**}/consultations/{consultationId} {
+      allow read: if isAuthenticated() && (resource.data.doctorUid == request.auth.uid || isAdmin());
     }
   }
 }
+

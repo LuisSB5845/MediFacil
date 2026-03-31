@@ -1428,6 +1428,7 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
   const [isGenerating, setIsGenerating] = useState(false);
   const [clinicalDoc, setClinicalDoc] = useState<any>(null);
   const recognitionRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if ('webkitSpeechRecognition' in window) {
@@ -1497,13 +1498,14 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
           <div className="space-y-4">
             {/* Option 1: Document Reference */}
             <div 
-              onClick={() => window.document.getElementById('file-upload-doc')?.click()}
-              className="group relative p-6 bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 rounded-xl cursor-pointer shadow-sm hover:shadow-md border border-transparent hover:border-primary-container/10"
+              onClick={() => fileInputRef.current?.click()}
+              className="group relative p-8 bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 rounded-2xl cursor-pointer shadow-sm hover:shadow-lg border-2 border-dashed border-primary-container/10 hover:border-primary-container/30"
             >
               <input 
-                id="file-upload-doc"
+                ref={fileInputRef}
                 type="file"
                 className="hidden"
+                accept=".txt,.md,.pdf"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -1517,18 +1519,17 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
                   }
                 }}
               />
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-lg bg-primary-container text-white flex items-center justify-center">
-                  <Upload className="w-6 h-6" />
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-primary-container text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-xl shadow-primary-container/20">
+                  <Upload className="w-8 h-8" />
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-bold text-primary-container">Documento de Referencia</h4>
-                  <p className="text-sm text-on-surface-variant mt-1">Cargue una historia previa, examen de laboratorio o informe externo.</p>
-                  <div className="mt-4 flex items-center gap-2 text-primary-container font-semibold text-sm">
-                    <span>Seleccionar archivo</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
+                <div className="space-y-2">
+                  <h4 className="font-bold text-xl text-primary-container">Documento de Referencia</h4>
+                  <p className="text-sm text-on-surface-variant max-w-[280px]">Cargue una historia previa, examen o informe externo para alimentar la IA.</p>
                 </div>
+                <button className="mt-2 bg-primary-container/10 text-primary-container px-6 py-2 rounded-full font-bold text-sm group-hover:bg-primary-container group-hover:text-white transition-all">
+                  Seleccionar Archivo
+                </button>
               </div>
             </div>
             {/* Option 2: Idea Base */}
@@ -1634,12 +1635,14 @@ Frecuencia Cardíaca: ${clinicalDoc.vitals.heartRate} bpm
 ---------------------------------------
 Generado automáticamente por MediFácil AI
                   `;
+                  const patientName = clinicalDoc.patientName || "Paciente_Sin_Nombre";
                   const blob = new Blob([content.trim()], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
-                  const a = window.document.createElement('a');
+                  const a = document.createElement('a');
                   a.href = url;
-                  a.download = `informe_${clinicalDoc.patientName.replace(/\s+/g, '_')}_${Date.now()}.txt`;
+                  a.download = `informe_${patientName.replace(/\s+/g, '_')}_${Date.now()}.txt`;
                   a.click();
+                  URL.revokeObjectURL(url);
                 }} 
                 className="p-2 hover:bg-white rounded-lg transition-colors text-on-surface-variant"
               >

@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "dev": "vite frontend --port=3000 --host=0.0.0.0",
+    "build": "vite build frontend",
+    "preview": "vite preview frontend",
+    "clean": "rm -rf frontend/dist",
+    "lint": "tsc --noEmit -p frontend/tsconfig.json"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
