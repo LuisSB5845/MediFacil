@@ -1,4 +1,4 @@
-import { streamObject } from 'ai';
+import { streamObject, generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -189,22 +189,31 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
 app.post('/api/ai/chat', async (req, res) => {
   const { messages, prompt } = req.body;
   
+  if (!process.env.GEMINI_API_KEY) {
+    logger.error("Falta GEMINI_API_KEY en el servidor.");
+    return res.status(500).json({ error: "Configuración incompleta: falta la API Key en el servidor." });
+  }
+
   try {
-    const { generateText } = await import('ai');
+    const chatPrompt = prompt || (messages && messages[messages.length - 1]?.content);
     
-    // Si viene un prompt solo (retrocompatibilidad) o una lista de mensajes
+    if (!chatPrompt) {
+      return res.status(400).json({ error: "Mensaje vacío" });
+    }
+
     const result = await generateText({
       model: model,
       system: "Eres un Asistente Clínico Inteligente para MediFácil. Ayudas a doctores a analizar casos, resumir historias clínicas y verificar datos de pacientes. Sé profesional, preciso y utiliza terminología médica adecuada. Siempre aclara que tus sugerencias deben ser validadas por el profesional médico.",
-      prompt: prompt || (messages && messages[messages.length - 1]?.content),
-      // Podríamos pasar el historial completo si quisiéramos:
-      // messages: messages 
+      prompt: chatPrompt,
     });
 
     res.json({ text: result.text });
   } catch (error: any) {
-    logger.error("Error en AI Chat Proxy:", error);
-    res.status(500).json({ error: "Error en el asistente de IA" });
+    logger.error("Error en AI Chat Proxy:", { error: error.message, stack: error.stack });
+    res.status(500).json({ 
+      error: "Error en el asistente de IA", 
+      details: error.message // Lo incluimos para debuggear
+    });
   }
 });
 
@@ -212,9 +221,11 @@ app.post('/api/ai/chat', async (req, res) => {
 app.post('/api/ai/analyze-image', async (req, res) => {
   const { image, prompt } = req.body;
   
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({ error: "Configuración incompleta: falta la API Key." });
+  }
+
   try {
-    const { generateText } = await import('ai');
-    
     const result = await generateText({
       model: model,
       messages: [
@@ -233,8 +244,8 @@ app.post('/api/ai/analyze-image', async (req, res) => {
 
     res.json({ text: result.text });
   } catch (error: any) {
-    logger.error("Error en Image Analysis Proxy:", error);
-    res.status(500).json({ error: "Error analizando la imagen" });
+    logger.error("Error en Image Analysis Proxy:", { error: error.message });
+    res.status(500).json({ error: "Error analizando la imagen", details: error.message });
   }
 });
 
