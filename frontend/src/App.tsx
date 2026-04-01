@@ -36,7 +36,10 @@ import {
   testConnection 
 } from './lib/firebase';
 import {
-  generateClinicalDocumentStream
+  generateClinicalDocumentStream,
+  ClinicalDoc,
+  createChat,
+  analyzeMedicalImage
 } from './lib/ai';
 import { cn } from './lib/utils';
 import { 
@@ -94,7 +97,8 @@ import {
   canUseAI, 
   incrementAIUsage, 
   resetMonthlyUsage, 
-  shouldResetMonthlyUsage 
+  shouldResetMonthlyUsage,
+  formatUsageDisplay
 } from './lib/usageLimits';
 
 const ADMIN_EMAILS = ["androxus512rbm@gmail.com", "luise.sb5845@gmail.com"];
@@ -828,12 +832,13 @@ interface ChatMessage {
 
 // --- Components ---
 
-const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin }: {
+const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPatient }: {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   user: UserProfile | null;
   onLogout: () => void;
   isAdmin: boolean;
+  onClearPatient: () => void;
 }) => {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -860,7 +865,10 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin }: {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                onClearPatient();
+              }}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200",
                 activeTab === tab.id 
@@ -1420,11 +1428,12 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
   );
 };
 
+
 const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
   const [dictation, setDictation] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [clinicalDoc, setClinicalDoc] = useState<any>(null);
+  const [clinicalDoc, setClinicalDoc] = useState<Partial<ClinicalDoc> | null>(null);
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1469,14 +1478,14 @@ const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profi
     }
 
     setIsGenerating(true);
-    setClinicalDoc(""); // Clear previous content
-
+    setClinicalDoc(null); // Clear previous content
+    
     try {
       await generateClinicalDocumentStream(
         dictation,
         `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`,
-        (streamedText) => {
-          setClinicalDoc(streamedText); // Update in real-time
+        (streamedData) => {
+          setClinicalDoc(streamedData); // Update in real-time with partial object
         }
       );
 
@@ -1693,7 +1702,12 @@ Generado automáticamente por MediFácil AI
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Nombre del Paciente</label>
                   <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-primary-container" type="text" defaultValue={clinicalDoc?.patientName || "Juan Alberto Pérez"} />
+                    <input 
+                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-primary-container" 
+                      type="text" 
+                      value={clinicalDoc?.patientName || ""} 
+                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, patientName: e.target.value} : null)}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1706,9 +1720,13 @@ Generado automáticamente por MediFácil AI
               <div className="space-y-3">
                 <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Motivo de Referencia / Hallazgos</label>
                 <div className="p-6 bg-surface-container-low rounded-xl border-l-4 border-secondary/40">
-                  <p className="text-on-surface text-sm leading-relaxed italic">
-                    {clinicalDoc?.findings || '"Paciente masculino de 45 años que presenta cuadro clínico de palpitaciones recurrentes. Durante la exploración se detecta soplo sistólico grado II/IV en foco mitral. Se requiere valoración por sub-especialidad para ecocardiograma doppler..."'}
-                  </p>
+                  <textarea 
+                    className="w-full bg-transparent border-none p-0 focus:ring-0 text-on-surface text-sm leading-relaxed italic resize-none"
+                    value={clinicalDoc?.findings || ""}
+                    onChange={(e) => setClinicalDoc(prev => prev ? {...prev, findings: e.target.value} : null)}
+                    rows={4}
+                    placeholder="Hallazgos clínicos..."
+                  />
                 </div>
                 <p className="text-[9px] text-secondary font-bold flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" />
@@ -1719,13 +1737,50 @@ Generado automáticamente por MediFácil AI
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Diagnóstico Presuntivo</label>
                   <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" placeholder="I49.9 Arritmia cardíaca, no especificada" type="text" defaultValue={clinicalDoc?.diagnosis} />
+                    <input 
+                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
+                      type="text" 
+                      value={clinicalDoc?.diagnosis || ""} 
+                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, diagnosis: e.target.value} : null)}
+                      placeholder="Diagnóstico..."
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Plan de Manejo Inmediato</label>
                   <div className="min-h-[100px] py-4 px-0 border-b-2 border-surface-container-high">
-                    <textarea className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm leading-relaxed" placeholder="Indicar medicación o medidas preventivas..." rows={3} defaultValue={clinicalDoc?.plan}></textarea>
+                    <textarea 
+                      className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm leading-relaxed" 
+                      value={clinicalDoc?.plan || ""} 
+                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, plan: e.target.value} : null)}
+                      placeholder="Indicar medicación o medidas preventivas..." 
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* Vitals in Preview */}
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Presión Arterial</label>
+                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
+                    <input 
+                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
+                      type="text" 
+                      value={clinicalDoc?.vitals?.bloodPressure || ""} 
+                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, vitals: {...(prev.vitals || {}), bloodPressure: e.target.value} as any} : null)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Frecuencia Cardíaca</label>
+                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
+                    <input 
+                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
+                      type="text" 
+                      value={clinicalDoc?.vitals?.heartRate || ""} 
+                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, vitals: {...(prev.vitals || {}), heartRate: e.target.value} as any} : null)}
+                    />
                   </div>
                 </div>
               </div>
@@ -1763,7 +1818,23 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    chatRef.current = createChat();
+    console.log("AIAssistant component mounted");
+    try {
+      chatRef.current = createChat();
+      console.log("AI Chat initialized successfully");
+      
+      // Add initial welcome message
+      if (messages.length === 0) {
+        setMessages([{
+          id: 'welcome',
+          role: 'model',
+          content: "Hola Dr/Dra, soy el Asistente Clínico de MediFácil. ¿En qué puedo ayudarle hoy con sus pacientes?",
+          timestamp: new Date()
+        }]);
+      }
+    } catch (e) {
+      console.error("Failed to initialize AI Chat:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -1835,14 +1906,45 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
   };
 
   return (
-    <div className="h-[calc(100vh-10rem)] flex flex-col bg-surface-low overflow-hidden rounded-2xl">
+    <div className="flex-1 flex flex-col bg-surface-container-low overflow-hidden rounded-2xl mx-6 mb-6">
+      {/* Header informático */}
+      <div className="bg-white/50 backdrop-blur-md border-b border-surface-high px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl sidebar-gradient flex items-center justify-center shadow-lg">
+            <Bot className="text-white w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold title-atelier text-primary">Asistente Clínico</h2>
+            <p className="text-xs text-high-contrast/60">MediFácil AI • Gemini Flash v1.5</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex flex-col items-end">
+            <span className="text-xs font-medium text-high-contrast/60">Consultas IA</span>
+            <span className={cn(
+              "text-sm font-bold",
+              canUseAI(profile).remaining < 5 ? "text-error" : "text-primary"
+            )}>
+              {formatUsageDisplay(canUseAI(profile).remaining, canUseAI(profile).limit)}
+            </span>
+          </div>
+          <button 
+            onClick={() => setMessages([])}
+            className="p-2 hover:bg-surface-high rounded-lg transition-colors text-high-contrast/60"
+            title="Limpiar chat"
+          >
+            <History className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-8 space-y-10 no-scrollbar">
-        <div className="max-w-4xl mx-auto text-center space-y-4 mb-12">
-          <h2 className="title-atelier text-primary">Clinical Assistant</h2>
-          <p className="body-atelier text-high-contrast/60 max-w-xl mx-auto">Verificación de pacientes, recomendaciones médicas basadas en evidencia y gestión automatizada de documentos en tiempo real.</p>
+        <div className="max-w-4xl mx-auto text-center space-y-2 mb-8 mt-4">
+          <p className="body-atelier text-high-contrast/40 text-sm max-w-xl mx-auto uppercase tracking-widest font-bold">Clinical Intelligence System</p>
+          <div className="h-px w-20 bg-primary/20 mx-auto"></div>
         </div>
 
-        <div className="max-w-5xl mx-auto space-y-8">
+        <div className="max-w-5xl mx-auto space-y-8 pb-10">
           {messages.map((msg) => (
             <div key={msg.id} className={cn("flex gap-4 items-start", msg.role === 'user' ? "flex-row-reverse" : "")}>
               <div className={cn(
@@ -1880,7 +1982,7 @@ const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: Us
         </div>
       </div>
 
-      <div className="p-10 pt-4 pb-12 bg-surface-low">
+      <div className="p-10 pt-4 pb-12 bg-surface-container-low">
         <div className="max-w-5xl mx-auto">
           {image && (
             <div className="mb-4 relative inline-block">
@@ -2933,13 +3035,11 @@ export default function App() {
     <div className="flex min-h-screen bg-background">
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          setSelectedPatient(null);
-        }}
+        setActiveTab={setActiveTab}
         user={profile}
         onLogout={handleLogout}
         isAdmin={isAdmin}
+        onClearPatient={() => setSelectedPatient(null)}
       />
       <div className="flex-1 ml-64 flex flex-col min-h-screen">
         <Header 

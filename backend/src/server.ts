@@ -1,4 +1,4 @@
-import { streamText } from 'ai';
+import { streamObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -129,20 +129,41 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
   const { prompt, context } = req.body;
 
   try {
-    const fullPrompt = `Analyze the following medical context and generate a structured clinical document.
-    Context: ${context || "None provided"}
-    Prompt: ${prompt}
-    
-    Return the response in a clear, narrative clinical assistant style.
-    Do NOT include technical instructions or JSON markers unless specifically asked.`;
+    const ClinicalDocumentSchema = z.object({
+      patientName: z.string().describe("Full name of the patient"),
+      findings: z.string().describe("Narrative clinical findings and physical examination"),
+      diagnosis: z.string().describe("Presumptive diagnosis or ICD code"),
+      plan: z.string().describe("Immediate management plan, medications, or referrals"),
+      vitals: z.object({
+        bloodPressure: z.string().describe("Blood pressure reading (e.g., 120/80 mmHg)"),
+        heartRate: z.string().describe("Heart rate in bpm"),
+      }),
+    });
 
-    const result = streamText({
+    const fullPrompt = `Analyze the following medical context and generate a structured clinical document.
+    Doctor Information: ${context || "Not specified"}
+    
+    Medical Notes/Dictation: "${prompt}"
+    
+    Generate professional medical content for each field. If a field like patient name or vitals is missing from the prompt, use a reasonable placeholder or "N/D".`;
+
+    const result = streamObject({
       model: google(aiModelName),
+      schema: ClinicalDocumentSchema,
       prompt: fullPrompt,
     });
 
-    // Enviar el stream al cliente
-    result.pipeTextStreamToResponse(res);
+    // Configurar cabeceras para streaming persistente
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    for await (const partialObject of result.partialObjectStream) {
+      if (partialObject) {
+        res.write(JSON.stringify(partialObject) + "\n");
+      }
+    }
+    
+    res.end();
 
   } catch (error: any) {
     logger.error("Error calling AI SDK:", { error: error.message, stack: error.stack });
@@ -175,6 +196,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Ocurrió un error interno en el servidor.' });
 });
 
-app.listen(PORT, () => {
-  logger.info(`🚀 Servidor seguro escuchando en puerto ${PORT}`, { context: { environment: process.env.NODE_ENV } });
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    logger.info(`🚀 Servidor seguro escuchando en puerto ${PORT}`, { context: { environment: process.env.NODE_ENV } });
+  });
+}
+
+export default app;
