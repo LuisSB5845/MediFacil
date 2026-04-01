@@ -23,7 +23,11 @@ const PORT = process.env.PORT || 4000;
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY || "",
 });
+
+// Opción para cambiar de proveedor o modelo fácilmente
+// Solo cambia esta variable o el valor en .env para usar otro modelo (ej: gemini-1.5-pro)
 const aiModelName = process.env.AI_MODEL_NAME || "gemini-1.5-flash";
+const model = google(aiModelName);
 
 
 // 1. CONFIGURACIÓN DE SEGURIDAD (Helmet)
@@ -148,7 +152,7 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
     Generate professional medical content for each field. If a field like patient name or vitals is missing from the prompt, use a reasonable placeholder or "N/D".`;
 
     const result = streamObject({
-      model: google(aiModelName),
+      model: model,
       schema: ClinicalDocumentSchema,
       prompt: fullPrompt,
     });
@@ -178,6 +182,59 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Error procesando solicitud de IA en tiempo real' });
     }
+  }
+});
+
+// Endpoint para Chat Interactivo (Asistente)
+app.post('/api/ai/chat', async (req, res) => {
+  const { messages, prompt } = req.body;
+  
+  try {
+    const { generateText } = await import('ai');
+    
+    // Si viene un prompt solo (retrocompatibilidad) o una lista de mensajes
+    const result = await generateText({
+      model: model,
+      system: "Eres un Asistente Clínico Inteligente para MediFácil. Ayudas a doctores a analizar casos, resumir historias clínicas y verificar datos de pacientes. Sé profesional, preciso y utiliza terminología médica adecuada. Siempre aclara que tus sugerencias deben ser validadas por el profesional médico.",
+      prompt: prompt || (messages && messages[messages.length - 1]?.content),
+      // Podríamos pasar el historial completo si quisiéramos:
+      // messages: messages 
+    });
+
+    res.json({ text: result.text });
+  } catch (error: any) {
+    logger.error("Error en AI Chat Proxy:", error);
+    res.status(500).json({ error: "Error en el asistente de IA" });
+  }
+});
+
+// Endpoint para Análisis de Imágenes Médicas
+app.post('/api/ai/analyze-image', async (req, res) => {
+  const { image, prompt } = req.body;
+  
+  try {
+    const { generateText } = await import('ai');
+    
+    const result = await generateText({
+      model: model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt || "Analiza esta imagen médica." },
+            { 
+              type: 'image', 
+              image: image.startsWith('data:') ? new URL(image) : image 
+            },
+          ],
+        },
+      ],
+    });
+
+    res.json({ text: result.text });
+  } catch (error: any) {
+    logger.error("Error en Image Analysis Proxy:", error);
+    res.status(500).json({ error: "Error analizando la imagen" });
   }
 });
 
