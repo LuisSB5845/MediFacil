@@ -1,4 +1,4 @@
-const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:4000/api";
+const API_URL = (import.meta as any).env.VITE_API_URL || "/api";
 
 export interface ClinicalDoc {
   patientName: string;
@@ -124,7 +124,11 @@ export function createChat() {
           body: JSON.stringify({ prompt: input }),
         });
 
-        if (!response.ok) throw new Error("Error en el chat del servidor");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMessage = errorData.details || errorData.error || "Error en el chat del servidor";
+          throw new Error(errorMessage);
+        }
         
         const data = await response.json();
         
@@ -134,7 +138,7 @@ export function createChat() {
             text: () => data.text
           })
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error in AI Chat proxy:", error);
         throw error;
       }
