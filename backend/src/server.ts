@@ -202,10 +202,11 @@ app.post('/api/ai/chat', async (req, res) => {
       return res.status(400).json({ error: "Mensaje vacío" });
     }
 
+    const systemMessage = "Eres un Asistente Clínico Inteligente para MediFácil. Ayudas a doctores a analizar casos, resumir historias clínicas y verificar datos de pacientes. Sé profesional, preciso y utiliza terminología médica adecuada. Siempre aclara que tus sugerencias deben ser validadas por el profesional médico.";
+    
     const result = await generateText({
       model: model,
-      system: "Eres un Asistente Clínico Inteligente para MediFácil. Ayudas a doctores a analizar casos, resumir historias clínicas y verificar datos de pacientes. Sé profesional, preciso y utiliza terminología médica adecuada. Siempre aclara que tus sugerencias deben ser validadas por el profesional médico.",
-      prompt: chatPrompt,
+      prompt: `System: ${systemMessage}\n\nUser: ${chatPrompt}`,
     });
 
     res.json({ text: result.text });
