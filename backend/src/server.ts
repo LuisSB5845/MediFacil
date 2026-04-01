@@ -22,12 +22,11 @@ const PORT = process.env.PORT || 4000;
 // Inicializar el proveedor de Google SDK
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY || "",
-  baseURL: 'https://generativelanguage.googleapis.com/v1',
 });
 
 // Opción para cambiar de proveedor o modelo fácilmente
 // Solo cambia esta variable o el valor en .env para usar otro modelo (ej: gemini-1.5-pro)
-const aiModelName = process.env.AI_MODEL_NAME || "gemini-1.5-flash";
+const aiModelName = process.env.AI_MODEL_NAME || "gemini-1.5-pro";
 const model = google(aiModelName);
 
 
