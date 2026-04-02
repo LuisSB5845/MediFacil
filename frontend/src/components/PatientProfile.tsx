@@ -143,15 +143,6 @@ export const PatientProfile = ({
                 <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[9px]">Peso</p>
                 <p className="body-atelier font-bold text-high-contrast">{patient.weight} kg</p>
               </div>
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[9px]">IMC</p>
-                <div className="flex items-center gap-2">
-                  <p className="body-atelier font-bold text-high-contrast">{patient.bmi}</p>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[8px] font-black uppercase tracking-widest border border-emerald-100">
-                    Normal
-                  </span>
-                </div>
-              </div>
             </div>
 
             {/* New Contact Info Grid */}

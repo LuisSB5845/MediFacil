@@ -1108,27 +1108,27 @@ const PatientsList = ({
                     {patient.createdAt ? new Date(patient.createdAt?.toDate ? patient.createdAt.toDate() : patient.createdAt).toLocaleDateString() : 'N/A'}
                   </td>
                   <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end gap-3">
+                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
                       <button 
                         onClick={() => onSelectPatient(patient)}
-                        className="p-2 hover:bg-primary/5 rounded-full text-primary transition-colors" 
-                        title="Ver Historial"
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-primary/5 rounded-lg text-primary transition-all border border-transparent hover:border-primary/10" 
                       >
-                        <History className="w-5 h-5" />
+                        <History className="w-4 h-4" />
+                        <span className="font-bold uppercase tracking-widest text-[9px]">Historial</span>
                       </button>
                       <button 
                         onClick={() => onEditPatient(patient)}
-                        className="p-2 hover:bg-secondary/5 rounded-full text-secondary transition-colors" 
-                        title="Editar"
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-secondary/5 rounded-lg text-secondary transition-all border border-transparent hover:border-secondary/10" 
                       >
-                        <Edit3 className="w-5 h-5" />
+                        <Edit3 className="w-4 h-4" />
+                        <span className="font-bold uppercase tracking-widest text-[9px]">Editar</span>
                       </button>
                       <button 
                         onClick={() => onDeletePatient(patient.id)}
-                        className="p-2 hover:bg-error/5 rounded-full text-error transition-colors" 
-                        title="Eliminar"
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-error/5 rounded-lg text-error transition-all border border-transparent hover:border-error/10" 
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Trash2 className="w-4 h-4" />
+                        <span className="font-bold uppercase tracking-widest text-[9px]">Eliminar</span>
                       </button>
                     </div>
                   </td>
