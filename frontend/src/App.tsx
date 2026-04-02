@@ -773,65 +773,7 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
   );
 };
 
-// --- Types ---
-
-interface Patient {
-  id: string;
-  name: string;
-  gender: string;
-  age: number;
-  bloodType: string;
-  allergies: string;
-  height: number;
-  weight: number;
-  bmi: number;
-  doctorUid: string;
-  createdAt: any;
-}
-
-interface Consultation {
-  id: string;
-  patientId: string;
-  doctorUid: string;
-  date: any;
-  type: string;
-  title: string;
-  findings: string;
-  diagnosis: string;
-  plan: string;
-  vitals: {
-    bloodPressure: string;
-    heartRate: number;
-  };
-}
-
-interface UserProfile {
-  uid: string;
-  displayName: string;
-  email: string;
-  photoURL: string;
-  specialty?: string;
-  professionalId?: string;
-  bio?: string;
-  phone?: string;
-  officeLocation?: string;
-  role?: 'doctor' | 'admin';
-  plan?: 'free' | 'pro' | 'whitelisted';
-  consultationsThisMonth: number;
-  documentsThisMonth: number;
-  aiMessagesThisMonth: number;
-  usageResetDate: string;
-  // Legacy fields for compatibility
-  usageThisMonth?: number;
-  usageLastReset?: any;
-}
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'model';
-  content: string;
-  timestamp: any;
-}
+// Global interfaces and sub-component-specific components are now imported from ./types and ./components
 
 // --- Components ---
 
@@ -1267,7 +1209,14 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
               <span className="text-[10px] text-white uppercase font-bold tracking-widest">Sistema Operativo v2.4</span>
             </div>
             <h2 className="text-[4rem] font-bold text-white leading-tight tracking-tight">
-              {user?.gender === 'female' ? "Bienvenida, Dra. " : "Bienvenido, Dr. "}{user?.displayName?.split(' ')[0] || "Especialista"}
+              {user?.gender === 'female' ? "Bienvenida, Dra. " : "Bienvenido, Dr. "}
+              {user?.displayName ? (
+                (() => {
+                  const parts = user.displayName.trim().split(/\s+/);
+                  // Display first name and first last name
+                  return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
+                })()
+              ) : "Especialista"}
             </h2>
             <p className="text-xl text-white/80 font-medium">Gestione sus consultas con la precisión de un atelier digital.</p>
           </div>
@@ -1434,49 +1383,7 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
 };
 
 
-const DocumentGenerator = () => {
-  return (
-    <div className="flex-1 flex items-center justify-center p-12 bg-surface-container-low min-h-[600px]">
-      <div className="text-center space-y-8 max-w-2xl p-16 bg-white rounded-[32px] shadow-premium-soft border border-primary/5 animate-in zoom-in duration-700">
-        <div className="w-28 h-28 bg-primary/10 rounded-[28px] flex items-center justify-center mx-auto mb-4 rotate-3 hover:rotate-0 transition-transform duration-500">
-          <FileText className="w-14 h-14 text-primary" />
-        </div>
-        <div className="space-y-4">
-          <h3 className="text-4xl font-headline font-black text-primary tracking-tight">Generador de Documentos</h3>
-          <p className="text-on-surface-variant text-lg leading-relaxed max-w-md mx-auto">
-            Estamos perfeccionando nuestro motor de transcripción IA para brindarle la máxima precisión médica.
-          </p>
-        </div>
-        <div className="inline-flex items-center gap-3 px-8 py-4 bg-secondary/10 rounded-2xl border border-secondary/20 group cursor-default">
-          <div className="w-3 h-3 bg-secondary rounded-full animate-pulse" />
-          <span className="text-secondary font-black tracking-widest text-sm uppercase">Próximamente disponible en su región</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const AIAssistant = () => {
-  return (
-    <div className="flex-1 flex items-center justify-center p-12 bg-surface-container-low">
-      <div className="text-center space-y-8 max-w-2xl p-16 bg-white rounded-[32px] shadow-premium-soft border border-primary/5 animate-in slide-in-from-bottom-8 duration-700">
-        <div className="w-28 h-28 sidebar-gradient rounded-[28px] flex items-center justify-center mx-auto mb-4 shadow-xl -rotate-3 hover:rotate-0 transition-transform duration-500">
-          <Bot className="w-14 h-14 text-white" />
-        </div>
-        <div className="space-y-4">
-          <h3 className="text-4xl font-headline font-black text-primary tracking-tight">Asistente Clínico IA</h3>
-          <p className="text-on-surface-variant text-lg leading-relaxed max-w-md mx-auto">
-            Estamos integrando Gemini 1.5 Pro para ofrecerle análisis diagnósticos de última generación con total privacidad.
-          </p>
-        </div>
-        <div className="inline-flex items-center gap-4 px-8 py-4 bg-primary/5 rounded-2xl border border-primary/10">
-          <Sparkles className="w-5 h-5 text-primary animate-pulse" />
-          <span className="text-primary font-black tracking-widest text-sm uppercase">Fase de pruebas Beta</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+// Local versions removed in favor of imported components from ./components/
 
 const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; onUpdate: (u: Partial<UserProfile>) => void }) => {
   const [formData, setFormData] = useState<Partial<UserProfile>>(user || {});
@@ -2033,7 +1940,6 @@ export default function App() {
     plan: '',
     vitals: {
       bloodPressure: '120/80',
-      heartRate: 72,
       labGabinete: ''
     }
   });
@@ -2224,7 +2130,6 @@ export default function App() {
         plan: '',
         vitals: {
           bloodPressure: '120/80',
-          heartRate: 72,
           labGabinete: ''
         }
       });
@@ -2367,7 +2272,10 @@ export default function App() {
                       findings: c.findings || '',
                       diagnosis: c.diagnosis || '',
                       plan: c.plan || '',
-                      vitals: c.vitals || { bloodPressure: '120/80', heartRate: 72, labGabinete: '' }
+                      vitals: {
+                        bloodPressure: c.vitals?.bloodPressure || '120/80',
+                        labGabinete: c.vitals?.labGabinete || ''
+                      }
                     });
                     setShowAddConsultation(true);
                   }}
@@ -2379,9 +2287,33 @@ export default function App() {
                       patients={patients}
                       onSelectPatient={setSelectedPatient}
                       onAddPatient={() => setShowAddPatient(true)}
-                      onNewConsultation={() => setShowPatientSearchModal(true)}
+                      onNewConsultation={() => {
+                        setNewConsultation({
+                          type: 'Consulta General',
+                          title: '',
+                          findings: '',
+                          diagnosis: '',
+                          plan: '',
+                          vitals: {
+                            bloodPressure: '120/80',
+                            labGabinete: ''
+                          }
+                        });
+                        setShowPatientSearchModal(true);
+                      }}
                       onStartConsultation={(p) => {
                         setSelectedPatient(p);
+                        setNewConsultation({
+                          type: 'Consulta General',
+                          title: '',
+                          findings: '',
+                          diagnosis: '',
+                          plan: '',
+                          vitals: {
+                            bloodPressure: '120/80',
+                            labGabinete: ''
+                          }
+                        });
                         setShowAddConsultation(true);
                       }}
                       search={search}
@@ -2417,6 +2349,17 @@ export default function App() {
                       onDeletePatient={handleDeletePatient}
                       onStartConsultation={(p) => {
                         setSelectedPatient(p);
+                        setNewConsultation({
+                          type: 'Consulta General',
+                          title: '',
+                          findings: '',
+                          diagnosis: '',
+                          plan: '',
+                          vitals: {
+                            bloodPressure: '120/80',
+                            labGabinete: ''
+                          }
+                        });
                         setShowAddConsultation(true);
                       }}
                       search={search}
@@ -2642,15 +2585,7 @@ export default function App() {
                       onChange={(e) => setNewConsultation({ ...newConsultation, vitals: { ...newConsultation.vitals, bloodPressure: e.target.value } })}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="label-atelier text-high-contrast/40 px-1">Frecuencia Cardíaca (bpm)</label>
-                    <input 
-                      className="input-field w-full" 
-                      type="number" 
-                      value={newConsultation.vitals.heartRate}
-                      onChange={(e) => setNewConsultation({ ...newConsultation, vitals: { ...newConsultation.vitals, heartRate: parseInt(e.target.value) } })}
-                    />
-                  </div>
+
                 </div>
                 <div className="space-y-2">
                   <label className="label-atelier text-high-contrast/40 px-1">Hallazgos / Motivo</label>
@@ -2925,7 +2860,10 @@ export default function App() {
                 findings: c.findings || '',
                 diagnosis: c.diagnosis || '',
                 plan: c.plan || '',
-                vitals: c.vitals || { bloodPressure: '120/80', heartRate: 72 }
+                vitals: {
+                  bloodPressure: c.vitals?.bloodPressure || '120/80',
+                  labGabinete: c.vitals?.labGabinete || ''
+                }
               });
               setShowConsultationSearchModal(false);
               setShowAddConsultation(true);
@@ -2964,10 +2902,6 @@ export default function App() {
                   <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
                     <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Presión Arterial</p>
                     <p className="body-atelier font-bold text-primary text-lg">{selectedConsultation.vitals?.bloodPressure || 'N/A'}</p>
-                  </div>
-                  <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
-                    <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Frecuencia Cardíaca</p>
-                    <p className="body-atelier font-bold text-primary text-lg">{selectedConsultation.vitals?.heartRate || 'N/A'} <span className="text-[10px] font-medium text-high-contrast/40">LPM</span></p>
                   </div>
                   <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
                     <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Laboratorio / Gabinete</p>
