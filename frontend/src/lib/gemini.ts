@@ -1,9 +1,9 @@
 const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:4000/api";
 
 export const models = {
-  pro: "gemini-2.0-flash",
-  flash: "gemini-2.0-flash",
-  image: "gemini-2.0-flash", 
+  pro: "backend-managed",
+  flash: "backend-managed",
+  image: "backend-managed", 
 };
 
 

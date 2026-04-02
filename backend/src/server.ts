@@ -1,5 +1,4 @@
-import { streamObject, generateText } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { streamObject, generateText, createGateway } from 'ai';
 import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
@@ -19,15 +18,14 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Inicializar el proveedor de Google SDK
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
+// Inicializar el proveedor de Vercel AI Gateway
+const gateway = createGateway({
+  apiKey: process.env.AI_GATEWAY_API_KEY || "",
 });
 
-// Opción para cambiar de proveedor o modelo fácilmente
-// Solo cambia esta variable o el valor en .env para usar otro modelo (ej: gemini-1.5-pro)
-const aiModelName = process.env.AI_MODEL_NAME || "gemini-2.0-flash";
-const model = google(aiModelName);
+// El backend decide qué IA utilizar basándose en AI_MODEL_NAME (ej: zai/glm-4.6v-flash)
+const aiModelName = process.env.AI_MODEL_NAME || "zai/glm-4.6v-flash";
+const model = gateway(aiModelName);
 
 
 // 1. CONFIGURACIÓN DE SEGURIDAD (Helmet)
@@ -189,9 +187,9 @@ app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
 app.post('/api/ai/chat', async (req, res) => {
   const { messages, prompt } = req.body;
   
-  if (!process.env.GEMINI_API_KEY) {
-    logger.error("Falta GEMINI_API_KEY en el servidor.");
-    return res.status(500).json({ error: "Configuración incompleta: falta la API Key en el servidor." });
+  if (!process.env.AI_GATEWAY_API_KEY) {
+    logger.error("Falta AI_GATEWAY_API_KEY en el servidor.");
+    return res.status(500).json({ error: "Configuración incompleta: falta la Gateway API Key en el servidor." });
   }
 
   try {
@@ -222,8 +220,8 @@ app.post('/api/ai/chat', async (req, res) => {
 app.post('/api/ai/analyze-image', async (req, res) => {
   const { image, prompt } = req.body;
   
-  if (!process.env.GEMINI_API_KEY) {
-    return res.status(500).json({ error: "Configuración incompleta: falta la API Key." });
+  if (!process.env.AI_GATEWAY_API_KEY) {
+    return res.status(500).json({ error: "Configuración incompleta: falta la Gateway API Key." });
   }
 
   try {
