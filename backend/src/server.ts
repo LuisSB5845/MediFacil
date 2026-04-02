@@ -10,10 +10,8 @@ import { fileURLToPath } from 'url';
 import logger from './utils/logger.js';
 import { sendDiscordAlert } from './utils/alerts.js';
 
-// Configuración de variables de entorno
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// Configuración de variables de entorno - Carga desde la raíz del proyecto para mayor seguridad y compatibilidad
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -119,15 +117,15 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Servidor MediFácil operando con seguridad mejorada.' });
 });
 
-// Proxy Seguro para Gemini (Oculta la API Key del Cliente)
-const GeminiSchema = z.object({
+// Proxy Seguro para IA (Oculta la API Key del Cliente)
+const AISchema = z.object({
   body: z.object({
     prompt: z.string().min(1).max(5000),
     context: z.string().optional(),
   }),
 });
 
-app.post('/api/ai/analyze', validate(GeminiSchema), async (req, res) => {
+app.post('/api/ai/analyze', validate(AISchema), async (req, res) => {
   const { prompt, context } = req.body;
 
   try {
