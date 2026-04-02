@@ -109,7 +109,7 @@ export async function analyzeMedicalImage(base64Image: string, prompt: string): 
 }
 
 /**
- * Proxy implementation for Chat that mimics the Gemini SDK interface
+ * Proxy implementation for Chat that mimics the expected assistant interface.
  * This avoids breaking the existing UI components.
  */
 export function createChat() {
@@ -147,7 +147,7 @@ export function createChat() {
 }
 
 export const models = {
-  pro: "gemini-2.0-flash",
-  flash: "gemini-2.0-flash",
-  image: "gemini-2.0-flash",
+  pro: "backend-managed",
+  flash: "backend-managed",
+  image: "backend-managed",
 };
