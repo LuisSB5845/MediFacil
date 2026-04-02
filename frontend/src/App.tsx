@@ -91,8 +91,11 @@ import {
   Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import ReactMarkdown from 'react-markdown';
 import PaymentPlans from './components/PaymentPlans';
+import { AIAssistant } from './components/AIAssistant';
+import { DocumentGenerator } from './components/DocumentGenerator';
+import { PatientProfile } from './components/PatientProfile';
+import { Patient, Consultation, UserProfile } from './types';
 import { 
   canUseAI, 
   incrementAIUsage, 
@@ -1263,7 +1266,9 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
               <span className="w-2 h-2 bg-secondary rounded-full"></span>
               <span className="text-[10px] text-white uppercase font-bold tracking-widest">Sistema Operativo v2.4</span>
             </div>
-            <h2 className="text-5xl font-extrabold text-white tracking-tight">Bienvenido, {user?.displayName || "Dr. Julián Rivera"}</h2>
+            <h2 className="text-[4rem] font-bold text-white leading-tight tracking-tight">
+              {user?.gender === 'female' ? "Bienvenida, Dra. " : "Bienvenido, Dr. "}{user?.displayName?.split(' ')[0] || "Especialista"}
+            </h2>
             <p className="text-xl text-white/80 font-medium">Gestione sus consultas con la precisión de un atelier digital.</p>
           </div>
         </div>
@@ -1429,604 +1434,44 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
 };
 
 
-const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
-  const [dictation, setDictation] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [clinicalDoc, setClinicalDoc] = useState<Partial<ClinicalDoc> | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if ('webkitSpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'es-ES';
-
-      recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            setDictation(prev => prev + event.results[i][0].transcript);
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-      };
-    }
-  }, []);
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      recognitionRef.current?.stop();
-    } else {
-      recognitionRef.current?.start();
-    }
-    setIsRecording(!isRecording);
-  };
-
-  const handleGenerate = async () => {
-    if (!dictation) return;
-    
-    // Check usage limits
-    const { allowed, remaining } = canUseAI(profile);
-    if (!allowed && profile?.plan !== 'whitelisted') {
-      alert("Has alcanzado tu límite mensual de consultas IA. Por favor, actualiza tu plan para continuar.");
-      return;
-    }
-
-    setIsGenerating(true);
-    setClinicalDoc(null); // Clear previous content
-    
-    try {
-      await generateClinicalDocumentStream(
-        dictation,
-        `Doctor: ${profile?.displayName}, Specialty: ${profile?.specialty}`,
-        (streamedData) => {
-          setClinicalDoc(streamedData); // Update in real-time with partial object
-        }
-      );
-
-      // Increment usage
-      if (profile) {
-        await incrementAIUsage(profile.uid, profile.aiMessagesThisMonth || 0);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
+const DocumentGenerator = () => {
   return (
-    <div className="grid grid-cols-12 gap-8 items-start">
-      {/* Left Column: Input Selection */}
-      <div className="col-span-12 lg:col-span-5 space-y-8">
-        <section className="space-y-6">
-          <header>
-            <h3 className="font-headline text-3xl font-extrabold text-primary-container tracking-tight">Atelier de Creación</h3>
-            <p className="text-on-surface-variant mt-2">Defina el origen de su documento clínico para que nuestra IA estructure la consulta.</p>
-          </header>
-          <div className="space-y-4">
-            {/* Option 1: Document Reference */}
-            <div 
-              onClick={() => fileInputRef.current?.click()}
-              className="group relative p-8 bg-surface-container-low hover:bg-surface-container-lowest transition-all duration-300 rounded-2xl cursor-pointer shadow-sm hover:shadow-lg border-2 border-dashed border-primary-container/10 hover:border-primary-container/30"
-            >
-              <input 
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept=".txt,.md,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                      const text = event.target?.result as string;
-                      setDictation(prev => prev + (prev ? '\n\n' : '') + "--- Contenido del archivo ---\n" + text);
-                      alert(`Archivo "${file.name}" cargado exitosamente.`);
-                    };
-                    reader.readAsText(file);
-                  }
-                }}
-              />
-              <div className="flex flex-col items-center text-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-primary-container text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-xl shadow-primary-container/20">
-                  <Upload className="w-8 h-8" />
-                </div>
-                <div className="space-y-2">
-                  <h4 className="font-bold text-xl text-primary-container">Documento de Referencia</h4>
-                  <p className="text-sm text-on-surface-variant max-w-[280px]">Cargue una historia previa, examen o informe externo para alimentar la IA.</p>
-                </div>
-                <button className="mt-2 bg-primary-container/10 text-primary-container px-6 py-2 rounded-full font-bold text-sm group-hover:bg-primary-container group-hover:text-white transition-all">
-                  Seleccionar Archivo
-                </button>
-              </div>
-            </div>
-            {/* Option 2: Idea Base */}
-            <div className="p-6 bg-surface-container-lowest rounded-xl shadow-[0px_10px_30px_rgba(25,25,112,0.04)] border-2 border-primary-container/5 space-y-4">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-lg bg-secondary text-white flex items-center justify-center">
-                  <Lightbulb className="w-6 h-6 fill-white/20" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold text-primary-container">Idea Base / Dictado</h4>
-                  <p className="text-sm text-on-surface-variant mt-1">Describa brevemente el propósito o use el dictado por voz para la IA.</p>
-                </div>
-              </div>
-              <textarea 
-                className="w-full bg-surface-container-low border-none rounded-lg p-4 text-sm focus:ring-2 focus:ring-secondary/20 transition-all resize-none" 
-                placeholder="Ej: 'Necesito una orden de interconsulta para cardiología por sospecha de arritmia...'" 
-                rows={4}
-                value={dictation}
-                onChange={(e) => setDictation(e.target.value)}
-              />
-              <div className="flex justify-between items-center">
-                <button 
-                  onClick={toggleRecording}
-                  className={cn(
-                    "flex items-center gap-2 text-secondary hover:bg-secondary/5 px-3 py-1.5 rounded-full transition-colors font-medium text-xs",
-                    isRecording && "bg-red-500/10 text-red-500"
-                  )}
-                >
-                  {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                  <span>{isRecording ? "Detener Dictado" : "Iniciar Dictado"}</span>
-                </button>
-                <button 
-                  onClick={handleGenerate}
-                  disabled={isGenerating || !dictation}
-                  className="bg-gradient-to-r from-primary-container to-secondary text-white px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-transform shadow-lg shadow-primary-container/20 disabled:opacity-50"
-                >
-                  {isGenerating ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-white" />}
-                  <span>{isGenerating ? "Generando..." : "Enviar"}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-        {/* Status Panel */}
-        <div className="p-6 bg-white/70 backdrop-blur-md rounded-xl border border-white/40 shadow-sm">
-          <h5 className="text-[10px] uppercase font-extrabold tracking-widest text-on-surface-variant mb-4">Métricas de Precisión IA</h5>
-          <div className="space-y-4">
-            <div className="flex justify-between items-end">
-              <span className="text-sm font-medium">Contexto Médico</span>
-              <span className="text-xs font-bold text-secondary">98% Óptimo</span>
-            </div>
-            <div className="h-1.5 w-full bg-surface-container-high rounded-full overflow-hidden">
-              <div className="h-full bg-secondary w-[98%] rounded-full"></div>
-            </div>
-            <div className="flex justify-between items-end">
-              <span className="text-sm font-medium">Terminología Clínica</span>
-              <span className="text-xs font-bold text-primary-container">Personalizada</span>
-            </div>
-          </div>
+    <div className="flex-1 flex items-center justify-center p-12 bg-surface-container-low min-h-[600px]">
+      <div className="text-center space-y-8 max-w-2xl p-16 bg-white rounded-[32px] shadow-premium-soft border border-primary/5 animate-in zoom-in duration-700">
+        <div className="w-28 h-28 bg-primary/10 rounded-[28px] flex items-center justify-center mx-auto mb-4 rotate-3 hover:rotate-0 transition-transform duration-500">
+          <FileText className="w-14 h-14 text-primary" />
         </div>
-      </div>
-
-      {/* Right Column: Document Preview / Template */}
-      <div className="col-span-12 lg:col-span-7">
-        <div className="bg-white rounded-xl shadow-[0px_20px_60px_rgba(0,0,0,0.05)] min-h-[800px] flex flex-col border border-primary-container/5 overflow-hidden">
-          {/* Editor Toolbar */}
-          <div className="bg-surface-container-low px-8 py-4 flex items-center justify-between border-b border-surface-container-high">
-            <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-on-surface-variant bg-surface-container-highest px-3 py-1 rounded-full">BORRADOR IA</span>
-              <h4 className="text-sm font-bold text-primary-container">Plantilla: Informe de Interconsulta V.1</h4>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => window.print()} className="p-2 hover:bg-white rounded-lg transition-colors text-on-surface-variant">
-                <Printer className="w-5 h-5" />
-              </button>
-              <button 
-                onClick={() => {
-                  if (!clinicalDoc) return;
-                  const content = `
-MediFácil - Informe Clínico Inteligente
-=======================================
-FECHA: ${new Date().toLocaleString()}
-PACIENTE: ${clinicalDoc.patientName}
-ID-DOC: 4402-2910-MF
-
-HALLAZGOS:
-----------
-${clinicalDoc.findings}
-
-DIAGNÓSTICO:
-------------
-${clinicalDoc.diagnosis}
-
-PLAN DE TRATAMIENTO:
---------------------
-${clinicalDoc.plan}
-
-SIGNOS VITALES:
----------------
-Presión Arterial: ${clinicalDoc.vitals.bloodPressure}
-Frecuencia Cardíaca: ${clinicalDoc.vitals.heartRate} bpm
-
----------------------------------------
-Generado automáticamente por MediFácil AI
-                  `;
-                  const patientName = clinicalDoc.patientName || "Paciente_Sin_Nombre";
-                  const blob = new Blob([content.trim()], { type: 'text/plain' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `informe_${patientName.replace(/\s+/g, '_')}_${Date.now()}.txt`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }} 
-                className="p-2 hover:bg-white rounded-lg transition-colors text-on-surface-variant"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-              <div className="w-px h-6 bg-surface-container-highest mx-2"></div>
-              <button 
-                onClick={() => {
-                  setClinicalDoc(null);
-                  setDictation('');
-                }}
-                className="bg-primary-container text-white px-5 py-2 rounded-lg font-bold text-sm"
-              >
-                Finalizar
-              </button>
-            </div>
-          </div>
-          {/* Document Body */}
-          <div id="printable-document" className={cn("flex-1 p-16 space-y-12 bg-white", !clinicalDoc && "flex items-center justify-center")}>
-            {!clinicalDoc ? (
-              <div className="text-center space-y-4">
-                <FileText className="w-16 h-16 text-primary/10 mx-auto" />
-                <p className="text-on-surface-variant font-medium">No se ha generado ningún documento aún.</p>
-              </div>
-            ) : (
-              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            {/* Header Section */}
-            <div className="flex justify-between items-start">
-              <div className="space-y-1">
-                <p className="font-black text-2xl text-primary-container tracking-tighter">MediFácil</p>
-                <p className="text-[10px] text-on-surface-variant tracking-widest uppercase">Centro de Especialidades Avanzadas</p>
-              </div>
-              <div className="text-right space-y-1">
-                <div className="w-24 h-24 bg-surface-container-low rounded-lg ml-auto flex items-center justify-center text-on-surface-variant/30">
-                  <QrCode className="w-12 h-12" />
-                </div>
-                <p className="text-[9px] text-on-surface-variant mt-2 font-mono">ID-DOC: 4402-2910-MF</p>
-              </div>
-            </div>
-            {/* Editable Fields Grid */}
-            <div className="space-y-8">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Nombre del Paciente</label>
-                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input 
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-bold text-primary-container" 
-                      type="text" 
-                      value={clinicalDoc?.patientName || ""} 
-                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, patientName: e.target.value} : null)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Fecha de Consulta</label>
-                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" type="text" defaultValue={new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Motivo de Referencia / Hallazgos</label>
-                <div className="p-6 bg-surface-container-low rounded-xl border-l-4 border-secondary/40">
-                  <textarea 
-                    className="w-full bg-transparent border-none p-0 focus:ring-0 text-on-surface text-sm leading-relaxed italic resize-none"
-                    value={clinicalDoc?.findings || ""}
-                    onChange={(e) => setClinicalDoc(prev => prev ? {...prev, findings: e.target.value} : null)}
-                    rows={4}
-                    placeholder="Hallazgos clínicos..."
-                  />
-                </div>
-                <p className="text-[9px] text-secondary font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Texto autogenerado basado en idea base. Click para editar.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Diagnóstico Presuntivo</label>
-                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input 
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
-                      type="text" 
-                      value={clinicalDoc?.diagnosis || ""} 
-                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, diagnosis: e.target.value} : null)}
-                      placeholder="Diagnóstico..."
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Plan de Manejo Inmediato</label>
-                  <div className="min-h-[100px] py-4 px-0 border-b-2 border-surface-container-high">
-                    <textarea 
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm leading-relaxed" 
-                      value={clinicalDoc?.plan || ""} 
-                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, plan: e.target.value} : null)}
-                      placeholder="Indicar medicación o medidas preventivas..." 
-                      rows={3}
-                    />
-                  </div>
-                </div>
-              </div>
-              {/* Vitals in Preview */}
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Presión Arterial</label>
-                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input 
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
-                      type="text" 
-                      value={clinicalDoc?.vitals?.bloodPressure || ""} 
-                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, vitals: {...(prev.vitals || {}), bloodPressure: e.target.value} as any} : null)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-extrabold text-on-surface-variant uppercase tracking-widest">Frecuencia Cardíaca</label>
-                  <div className="h-10 px-0 border-b-2 border-surface-container-high flex items-center">
-                    <input 
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 font-medium text-on-surface" 
-                      type="text" 
-                      value={clinicalDoc?.vitals?.heartRate || ""} 
-                      onChange={(e) => setClinicalDoc(prev => prev ? {...prev, vitals: {...(prev.vitals || {}), heartRate: e.target.value} as any} : null)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* Footer Signature */}
-            <div className="pt-12 mt-12 border-t border-surface-container-high flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center">
-                  <PenTool className="w-6 h-6 text-on-surface-variant" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-primary-container">{user?.displayName || "Dr. Julián Rivera"}</p>
-                  <p className="text-[10px] text-on-surface-variant uppercase font-medium">Registro Médico: 882910-AR</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] text-on-surface-variant leading-tight">Documento verificado digitalmente por el sistema MediFácil AI v.2.4</p>
-              </div>
-            </div>
-          </div>
-        )}
+        <div className="space-y-4">
+          <h3 className="text-4xl font-headline font-black text-primary tracking-tight">Generador de Documentos</h3>
+          <p className="text-on-surface-variant text-lg leading-relaxed max-w-md mx-auto">
+            Estamos perfeccionando nuestro motor de transcripción IA para brindarle la máxima precisión médica.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-3 px-8 py-4 bg-secondary/10 rounded-2xl border border-secondary/20 group cursor-default">
+          <div className="w-3 h-3 bg-secondary rounded-full animate-pulse" />
+          <span className="text-secondary font-black tracking-widest text-sm uppercase">Próximamente disponible en su región</span>
+        </div>
       </div>
     </div>
-  </div>
-</div>
-);
+  );
 };
 
-const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [image, setImage] = useState<string | null>(null);
-  const chatRef = useRef<any>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    console.log("AIAssistant component mounted");
-    try {
-      chatRef.current = createChat();
-      console.log("AI Chat initialized successfully");
-      
-      // Add initial welcome message
-      if (messages.length === 0) {
-        setMessages([{
-          id: 'welcome',
-          role: 'model',
-          content: "Hola Dr/Dra, soy el Asistente Clínico de MediFácil. ¿En qué puedo ayudarle hoy con sus pacientes?",
-          timestamp: new Date()
-        }]);
-      }
-    } catch (e) {
-      console.error("Failed to initialize AI Chat:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const handleSend = async () => {
-    if (!input && !image) return;
-    
-    // Check usage limits
-    const { allowed } = canUseAI(profile);
-    if (!allowed && profile?.plan !== 'whitelisted') {
-      alert("Has alcanzado tu límite mensual de consultas IA. Por favor, actualiza tu plan para continuar.");
-      return;
-    }
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-      timestamp: new Date()
-    };
-    
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsTyping(true);
-
-    try {
-      let responseText = '';
-      if (image) {
-        responseText = await analyzeMedicalImage(image.split(',')[1], input || "Analyze this image.");
-        setImage(null);
-      } else {
-        const result = await chatRef.current.sendMessage(input);
-        const response = await result.response;
-        responseText = response.text();
-      }
-
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        content: responseText,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Increment usage after successful AI response
-      if (profile) {
-        await incrementAIUsage(profile.uid, profile.aiMessagesThisMonth || 0);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
+const AIAssistant = () => {
   return (
-    <div className="flex-1 flex flex-col bg-surface-container-low overflow-hidden rounded-2xl mx-6 mb-6">
-      {/* Header informático */}
-      <div className="bg-white/50 backdrop-blur-md border-b border-surface-high px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl sidebar-gradient flex items-center justify-center shadow-lg">
-            <Bot className="text-white w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold title-atelier text-primary">Asistente Clínico</h2>
-            <p className="text-xs text-high-contrast/60">MediFácil AI • Gemini Flash v1.5</p>
-          </div>
+    <div className="flex-1 flex items-center justify-center p-12 bg-surface-container-low">
+      <div className="text-center space-y-8 max-w-2xl p-16 bg-white rounded-[32px] shadow-premium-soft border border-primary/5 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="w-28 h-28 sidebar-gradient rounded-[28px] flex items-center justify-center mx-auto mb-4 shadow-xl -rotate-3 hover:rotate-0 transition-transform duration-500">
+          <Bot className="w-14 h-14 text-white" />
         </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex flex-col items-end">
-            <span className="text-xs font-medium text-high-contrast/60">Consultas IA</span>
-            <span className={cn(
-              "text-sm font-bold",
-              canUseAI(profile).remaining < 5 ? "text-error" : "text-primary"
-            )}>
-              {formatUsageDisplay(canUseAI(profile).remaining, canUseAI(profile).limit)}
-            </span>
-          </div>
-          <button 
-            onClick={() => setMessages([])}
-            className="p-2 hover:bg-surface-high rounded-lg transition-colors text-high-contrast/60"
-            title="Limpiar chat"
-          >
-            <History className="w-5 h-5" />
-          </button>
+        <div className="space-y-4">
+          <h3 className="text-4xl font-headline font-black text-primary tracking-tight">Asistente Clínico IA</h3>
+          <p className="text-on-surface-variant text-lg leading-relaxed max-w-md mx-auto">
+            Estamos integrando Gemini 1.5 Pro para ofrecerle análisis diagnósticos de última generación con total privacidad.
+          </p>
         </div>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-10 py-8 space-y-10 no-scrollbar">
-        <div className="max-w-4xl mx-auto text-center space-y-2 mb-8 mt-4">
-          <p className="body-atelier text-high-contrast/40 text-sm max-w-xl mx-auto uppercase tracking-widest font-bold">Clinical Intelligence System</p>
-          <div className="h-px w-20 bg-primary/20 mx-auto"></div>
-        </div>
-
-        <div className="max-w-5xl mx-auto space-y-8 pb-10">
-          {messages.map((msg) => (
-            <div key={msg.id} className={cn("flex gap-4 items-start", msg.role === 'user' ? "flex-row-reverse" : "")}>
-              <div className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-lg",
-                msg.role === 'model' ? "sidebar-gradient" : "bg-surface-high"
-              )}>
-                {msg.role === 'model' ? <Bot className="text-white w-5 h-5" /> : <UserIcon className="text-primary w-5 h-5" />}
-              </div>
-              <div className={cn(
-                "p-6 rounded-2xl shadow-sm max-w-[85%]",
-                msg.role === 'model' 
-                  ? "bg-white/70 backdrop-blur-xl border border-white/40 rounded-tl-none" 
-                  : "bg-primary text-white rounded-tr-none"
-              )}>
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
-              </div>
-            </div>
-          ))}
-          {isTyping && (
-            <div className="flex gap-4 items-start">
-              <div className="w-10 h-10 rounded-full sidebar-gradient flex items-center justify-center shrink-0 shadow-lg">
-                <Bot className="text-white w-5 h-5 animate-pulse" />
-              </div>
-              <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl rounded-tl-none border border-white/40 shadow-sm">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-primary/20 rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-primary/20 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-2 h-2 bg-primary/20 rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="p-10 pt-4 pb-12 bg-surface-container-low">
-        <div className="max-w-5xl mx-auto">
-          {image && (
-            <div className="mb-4 relative inline-block">
-              <img src={image} alt="Preview" className="h-20 w-20 object-cover rounded-lg border-2 border-primary" />
-              <button 
-                onClick={() => setImage(null)}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-          <div className="relative flex items-center gap-4 bg-white p-2 rounded-xl shadow-xl border border-white/80">
-            <label className="p-2 text-high-contrast/40 hover:text-primary transition-colors cursor-pointer">
-              <Paperclip className="w-5 h-5" />
-              <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
-            </label>
-            <input 
-              className="flex-1 py-3 text-high-contrast bg-transparent border-none focus:ring-0 outline-none placeholder:text-high-contrast/20" 
-              placeholder="Describe una acción médica o solicita un análisis..." 
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            />
-            <button 
-              onClick={handleSend}
-              disabled={isTyping || (!input && !image)}
-              className="btn-primary flex items-center gap-3 disabled:opacity-50"
-            >
-              <Send className="w-4 h-4" />
-              Enviar
-            </button>
-          </div>
-          <div className="mt-4 flex justify-center gap-6">
-            <p className="label-atelier text-high-contrast/40 flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" />
-              Encriptación de Grado Médico AES-256
-            </p>
-            <p className="label-atelier text-high-contrast/40 flex items-center gap-1">
-              <Gavel className="w-3 h-3" />
-              Cumple con Normativa HIPAA / GDPR
-            </p>
-          </div>
+        <div className="inline-flex items-center gap-4 px-8 py-4 bg-primary/5 rounded-2xl border border-primary/10">
+          <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+          <span className="text-primary font-black tracking-widest text-sm uppercase">Fase de pruebas Beta</span>
         </div>
       </div>
     </div>
@@ -2145,6 +1590,37 @@ const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; onUpdate
                   onChange={(e) => setFormData({ ...formData, officeLocation: e.target.value })}
                 />
               </div>
+              <div className="space-y-2">
+                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Género / Trato</label>
+                <div className="flex gap-4">
+                  <button 
+                    type="button"
+                    onClick={() => setFormData({ ...formData, gender: 'male' })}
+                    className={cn(
+                      "flex-1 p-4 rounded-xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2",
+                      formData.gender === 'male' 
+                        ? "bg-primary/5 border-primary text-primary" 
+                        : "bg-surface-low border-surface-container-high text-high-contrast/40 hover:border-primary/30"
+                    )}
+                  >
+                    <UserIcon className="w-4 h-4" />
+                    Dr. (Masculino)
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setFormData({ ...formData, gender: 'female' })}
+                    className={cn(
+                      "flex-1 p-4 rounded-xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2",
+                      formData.gender === 'female' 
+                        ? "bg-secondary/5 border-secondary text-secondary" 
+                        : "bg-surface-low border-surface-container-high text-high-contrast/40 hover:border-secondary/30"
+                    )}
+                  >
+                    <UserIcon className="w-4 h-4" />
+                    Dra. (Femenino)
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -2193,233 +1669,7 @@ const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; onUpdate
   );
 };
 
-const PatientProfile = ({ patient, onBack, onAddConsultation, onEditPatient, onDeletePatient, onDeleteConsultation, onCopyConsultation, onViewConsultation }: { 
-  patient: Patient; 
-  onBack: () => void;
-  onAddConsultation: () => void;
-  onEditPatient: () => void;
-  onDeletePatient: (id: string) => void;
-  onDeleteConsultation: (pId: string, cId: string) => void;
-  onCopyConsultation: (c: Consultation) => void;
-  onViewConsultation: (c: Consultation) => void;
-}) => {
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
-  const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
 
-  useEffect(() => {
-    const q = query(
-      collection(db, 'patients', patient.id, 'consultations'),
-      orderBy('date', 'desc')
-    );
-    return onSnapshot(q, (snapshot) => {
-      setConsultations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consultation)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `patients/${patient.id}/consultations`);
-    });
-  }, [patient.id]);
-
-  const filteredConsultations = consultations.filter(c => {
-    const cDate = new Date(c.date?.toDate?.() || c.date);
-    const start = dateFilter.start ? new Date(dateFilter.start) : null;
-    const end = dateFilter.end ? new Date(dateFilter.end) : null;
-    
-    if (start && cDate < start) return false;
-    if (end) {
-      const endOfDay = new Date(end);
-      endOfDay.setHours(23, 59, 59, 999);
-      if (cDate > endOfDay) return false;
-    }
-    return true;
-  });
-
-  return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex items-center gap-2 mb-8 text-high-contrast/60 text-sm font-medium">
-        <button onClick={onBack} className="hover:text-primary transition-colors body-atelier">Pacientes</button>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-primary font-bold body-atelier">{patient.name}</span>
-      </div>
-
-      <div className="card-atelier p-8 mb-10">
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          <div className="relative flex-shrink-0">
-            <div className="w-32 h-32 rounded-3xl bg-primary/10 flex items-center justify-center text-primary text-4xl font-black ring-4 ring-surface-low">
-              {patient.name.split(' ').map(n => n[0]).join('')}
-            </div>
-            <div className="absolute -bottom-2 -right-2 bg-secondary text-white p-1.5 rounded-lg shadow-lg">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex-grow">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-              <div>
-                <h2 className="headline-atelier text-primary">{patient.name}</h2>
-                <p className="label-atelier text-high-contrast/40 flex items-center gap-2 mt-1">
-                  <span className="bg-primary/5 px-2 py-0.5 rounded text-primary">#{patient.id.slice(-8).toUpperCase()}</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-surface-high" />
-                  <span>{patient.gender}</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-surface-high" />
-                  <span>{patient.age} Años</span>
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={onEditPatient}
-                  className="btn-primary flex items-center gap-2"
-                >
-                  <Edit3 className="w-4 h-4" />
-                  Modificar Perfil
-                </button>
-                <button 
-                  onClick={() => onDeletePatient(patient.id)}
-                  className="px-6 py-3 rounded-[0.5rem] bg-red-50 text-red-600 font-bold text-sm hover:bg-red-600 hover:text-white transition-all flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 bg-surface-low p-6 rounded-2xl">
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40">Alergias</p>
-                <p className="font-bold text-red-500 flex items-center gap-1 body-atelier">
-                  <AlertCircle className="w-3 h-3" />
-                  {patient.allergies || "Ninguna"}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40">Grupo Sanguíneo</p>
-                <p className="font-bold text-primary text-lg body-atelier">{patient.bloodType}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40">Estatura</p>
-                <p className="font-bold text-high-contrast text-lg body-atelier">{patient.height} m</p>
-              </div>
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40">Peso</p>
-                <p className="font-bold text-high-contrast text-lg body-atelier">{patient.weight} kg</p>
-              </div>
-              <div className="space-y-1">
-                <p className="label-atelier text-high-contrast/40">IMC</p>
-                <div className="flex items-center gap-2">
-                  <p className="font-bold text-high-contrast text-lg body-atelier">{patient.bmi}</p>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-secondary/10 text-secondary rounded font-black uppercase">Normal</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <h3 className="title-atelier text-primary">Historial de Consultas <span className="text-high-contrast/40 font-medium ml-2">({filteredConsultations.length})</span></h3>
-        
-        <div className="flex flex-wrap items-center gap-4 bg-surface-low p-2 rounded-xl border border-surface-high">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-primary" />
-            <input 
-              type="date" 
-              className="bg-transparent border-none text-xs font-bold text-high-contrast focus:ring-0 p-1"
-              value={dateFilter.start}
-              onChange={(e) => setDateFilter({ ...dateFilter, start: e.target.value })}
-            />
-          </div>
-          <span className="text-high-contrast/20 text-xs font-bold">a</span>
-          <div className="flex items-center gap-2">
-            <input 
-              type="date" 
-              className="bg-transparent border-none text-xs font-bold text-high-contrast focus:ring-0 p-1"
-              value={dateFilter.end}
-              onChange={(e) => setDateFilter({ ...dateFilter, end: e.target.value })}
-            />
-          </div>
-          {(dateFilter.start || dateFilter.end) && (
-            <button 
-              onClick={() => setDateFilter({ start: '', end: '' })}
-              className="p-1 hover:bg-surface-high rounded-lg transition-colors"
-            >
-              <X className="w-4 h-4 text-red-500" />
-            </button>
-          )}
-        </div>
-
-        <button 
-          onClick={onAddConsultation}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Nueva Consulta
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        {filteredConsultations.length > 0 ? (
-          filteredConsultations.map((consultation) => (
-            <div key={consultation.id} className="card-atelier p-8 group relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-secondary/20 group-hover:bg-secondary transition-colors" />
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-surface-low flex items-center justify-center text-primary">
-                    <History className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="body-atelier font-bold text-primary">{consultation.title || "Consulta Médica"}</p>
-                    <p className="label-atelier text-high-contrast/40">{new Date(consultation.date?.toDate?.() || consultation.date).toLocaleDateString()} • {new Date(consultation.date?.toDate?.() || consultation.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={() => onCopyConsultation(consultation)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-high-contrast/40 hover:text-secondary hover:bg-secondary/10 transition-all text-[10px] font-black uppercase tracking-wider"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copiar</span>
-                  </button>
-                  <button 
-                    onClick={() => onViewConsultation(consultation)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-high-contrast/40 hover:text-primary hover:bg-primary/10 transition-all text-[10px] font-black uppercase tracking-wider"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Ver</span>
-                  </button>
-                  <button 
-                    onClick={() => onDeleteConsultation(patient.id, consultation.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-high-contrast/40 hover:text-red-500 hover:bg-red-50 transition-all text-[10px] font-black uppercase tracking-wider"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Borrar</span>
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="space-y-2">
-                  <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Hallazgos</p>
-                  <p className="body-atelier text-high-contrast line-clamp-3">{consultation.findings}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Diagnóstico</p>
-                  <p className="body-atelier text-high-contrast font-medium">{consultation.diagnosis}</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Tratamiento</p>
-                  <p className="body-atelier text-high-contrast">{consultation.plan}</p>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="card-atelier p-16 text-center">
-            <div className="w-20 h-20 bg-surface-low rounded-full flex items-center justify-center mx-auto mb-6 text-high-contrast/20">
-              <History className="w-10 h-10" />
-            </div>
-            <h4 className="title-atelier text-primary mb-2">Sin Historial</h4>
-            <p className="body-atelier text-high-contrast/60">No se han registrado consultas para este paciente aún.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const ConsultationSearchModal = ({ 
   patient, 
@@ -2764,11 +2014,15 @@ export default function App() {
   const [newPatient, setNewPatient] = useState({
     name: '',
     age: 30,
-    gender: 'Masculino',
+    gender: 'Femenino',
     bloodType: 'O+',
     allergies: '',
     height: 1.75,
-    weight: 70
+    weight: 70,
+    address: '',
+    phone: '',
+    personalHistory: '',
+    familyHistory: ''
   });
 
   const [newConsultation, setNewConsultation] = useState({
@@ -2779,7 +2033,8 @@ export default function App() {
     plan: '',
     vitals: {
       bloodPressure: '120/80',
-      heartRate: 72
+      heartRate: 72,
+      labGabinete: ''
     }
   });
 
@@ -2936,11 +2191,15 @@ export default function App() {
       setNewPatient({
         name: '',
         age: 30,
-        gender: 'Masculino',
+        gender: 'Femenino',
         bloodType: 'O+',
         allergies: '',
         height: 1.75,
-        weight: 70
+        weight: 70,
+        address: '',
+        phone: '',
+        personalHistory: '',
+        familyHistory: ''
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'patients');
@@ -2965,7 +2224,8 @@ export default function App() {
         plan: '',
         vitals: {
           bloodPressure: '120/80',
-          heartRate: 72
+          heartRate: 72,
+          labGabinete: ''
         }
       });
     } catch (error) {
@@ -3086,7 +2346,11 @@ export default function App() {
                       bloodType: selectedPatient.bloodType,
                       height: selectedPatient.height,
                       weight: selectedPatient.weight,
-                      allergies: selectedPatient.allergies || ''
+                      allergies: selectedPatient.allergies || '',
+                      address: selectedPatient.address || '',
+                      phone: selectedPatient.phone || '',
+                      personalHistory: selectedPatient.personalHistory || '',
+                      familyHistory: selectedPatient.familyHistory || ''
                     });
                     setShowEditPatient(true);
                   }}
@@ -3103,7 +2367,7 @@ export default function App() {
                       findings: c.findings || '',
                       diagnosis: c.diagnosis || '',
                       plan: c.plan || '',
-                      vitals: c.vitals || { bloodPressure: '120/80', heartRate: 72 }
+                      vitals: c.vitals || { bloodPressure: '120/80', heartRate: 72, labGabinete: '' }
                     });
                     setShowAddConsultation(true);
                   }}
@@ -3142,7 +2406,11 @@ export default function App() {
                           bloodType: p.bloodType,
                           height: p.height,
                           weight: p.weight,
-                          allergies: p.allergies || ''
+                          allergies: p.allergies || '',
+                          address: p.address || '',
+                          phone: p.phone || '',
+                          personalHistory: p.personalHistory || '',
+                          familyHistory: p.familyHistory || ''
                         });
                         setShowEditPatient(true);
                       }}
@@ -3216,15 +2484,29 @@ export default function App() {
                   </div>
                   <div className="space-y-2">
                     <label className="label-atelier text-high-contrast/40 px-1">Género</label>
-                    <select 
-                      className="input-field w-full"
-                      value={newPatient.gender}
-                      onChange={(e) => setNewPatient({ ...newPatient, gender: e.target.value })}
-                    >
-                      <option>Masculino</option>
-                      <option>Femenino</option>
-                      <option>Otro</option>
-                    </select>
+                    <div className="input-field w-full bg-surface-low/50 flex items-center px-4 font-bold text-primary">
+                      Femenino
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Teléfono</label>
+                    <input 
+                      className="input-field w-full" 
+                      type="tel" 
+                      placeholder="Ej: +1 809 000 0000"
+                      value={newPatient.phone}
+                      onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Dirección</label>
+                    <input 
+                      className="input-field w-full" 
+                      type="text" 
+                      placeholder="Ej: Calle 123, Ensanche Naco"
+                      value={newPatient.address}
+                      onChange={(e) => setNewPatient({ ...newPatient, address: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="label-atelier text-high-contrast/40 px-1">Grupo Sanguíneo</label>
@@ -3259,10 +2541,30 @@ export default function App() {
                   <label className="label-atelier text-high-contrast/40 px-1">Alergias</label>
                   <textarea 
                     className="input-field w-full resize-none" 
-                    rows={3}
+                    rows={2}
                     value={newPatient.allergies}
                     onChange={(e) => setNewPatient({ ...newPatient, allergies: e.target.value })}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Antecedentes Personales</label>
+                    <textarea 
+                      className="input-field w-full resize-none" 
+                      rows={3}
+                      value={newPatient.personalHistory}
+                      onChange={(e) => setNewPatient({ ...newPatient, personalHistory: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Antecedentes Familiares</label>
+                    <textarea 
+                      className="input-field w-full resize-none" 
+                      rows={3}
+                      value={newPatient.familyHistory}
+                      onChange={(e) => setNewPatient({ ...newPatient, familyHistory: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="p-8 bg-surface-high flex gap-4">
@@ -3319,6 +2621,16 @@ export default function App() {
                       onChange={(e) => setNewConsultation({ ...newConsultation, title: e.target.value })}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="label-atelier text-high-contrast/40 px-1">Laboratorio / Gabinete</label>
+                  <textarea 
+                    className="input-field w-full resize-none" 
+                    rows={2}
+                    placeholder="Ej: Hemograma, Química, Rayos X..."
+                    value={newConsultation.vitals.labGabinete}
+                    onChange={(e) => setNewConsultation({ ...newConsultation, vitals: { ...newConsultation.vitals, labGabinete: e.target.value } })}
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -3426,15 +2738,29 @@ export default function App() {
                   </div>
                   <div className="space-y-2">
                     <label className="label-atelier text-high-contrast/40 px-1">Género</label>
-                    <select 
-                      className="input-field w-full"
-                      value={newPatient.gender}
-                      onChange={(e) => setNewPatient({ ...newPatient, gender: e.target.value })}
-                    >
-                      <option value="Masculino">Masculino</option>
-                      <option value="Femenino">Femenino</option>
-                      <option value="Otro">Otro</option>
-                    </select>
+                    <div className="input-field w-full bg-surface-low/50 flex items-center px-4 font-bold text-primary">
+                      Femenino
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="col-span-1 space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Teléfono</label>
+                    <input 
+                      className="input-field w-full" 
+                      type="tel" 
+                      value={newPatient.phone}
+                      onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Dirección</label>
+                    <input 
+                      className="input-field w-full" 
+                      type="text" 
+                      value={newPatient.address}
+                      onChange={(e) => setNewPatient({ ...newPatient, address: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-6">
@@ -3471,10 +2797,30 @@ export default function App() {
                   <label className="label-atelier text-high-contrast/40 px-1">Alergias</label>
                   <textarea 
                     className="input-field w-full resize-none" 
-                    rows={3}
+                    rows={2}
                     value={newPatient.allergies}
                     onChange={(e) => setNewPatient({ ...newPatient, allergies: e.target.value })}
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Antecedentes Personales</label>
+                    <textarea 
+                      className="input-field w-full resize-none" 
+                      rows={3}
+                      value={newPatient.personalHistory}
+                      onChange={(e) => setNewPatient({ ...newPatient, personalHistory: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="label-atelier text-high-contrast/40 px-1">Antecedentes Familiares</label>
+                    <textarea 
+                      className="input-field w-full resize-none" 
+                      rows={3}
+                      value={newPatient.familyHistory}
+                      onChange={(e) => setNewPatient({ ...newPatient, familyHistory: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="p-8 bg-surface-high flex gap-4">
@@ -3614,14 +2960,18 @@ export default function App() {
                 </button>
               </div>
               <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-3 gap-6">
                   <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
                     <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Presión Arterial</p>
-                    <p className="body-atelier font-bold text-primary text-xl">{selectedConsultation.vitals?.bloodPressure || 'N/A'}</p>
+                    <p className="body-atelier font-bold text-primary text-lg">{selectedConsultation.vitals?.bloodPressure || 'N/A'}</p>
                   </div>
                   <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
                     <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Frecuencia Cardíaca</p>
-                    <p className="body-atelier font-bold text-primary text-xl">{selectedConsultation.vitals?.heartRate || 'N/A'} <span className="text-xs font-medium text-high-contrast/40">LPM</span></p>
+                    <p className="body-atelier font-bold text-primary text-lg">{selectedConsultation.vitals?.heartRate || 'N/A'} <span className="text-[10px] font-medium text-high-contrast/40">LPM</span></p>
+                  </div>
+                  <div className="p-4 bg-surface-low rounded-xl border border-surface-high">
+                    <p className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px] mb-1">Laboratorio / Gabinete</p>
+                    <p className="body-atelier font-bold text-secondary text-lg">{selectedConsultation.vitals?.labGabinete || 'Ninguno'}</p>
                   </div>
                 </div>
 
