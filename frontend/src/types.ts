@@ -30,8 +30,7 @@ export interface Consultation {
   patientId: string;
   vitals: {
     bloodPressure: string;
-    heartRate?: number;
-    labGabinete?: string; // New field
+    labGabinete: string; // New field
   };
 }
 
@@ -49,4 +48,8 @@ export interface UserProfile {
   usageResetDate?: string;
   usageLastReset?: string;
   gender?: 'male' | 'female';
+  bio?: string;
+  professionalId?: string;
+  phone?: string;
+  officeLocation?: string;
 }
