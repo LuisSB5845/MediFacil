@@ -13,6 +13,18 @@ import { sendDiscordAlert } from './utils/alerts.js';
 // Configuración de variables de entorno - Carga desde la raíz del proyecto para mayor seguridad y compatibilidad
 dotenv.config();
 
+// Registro de carga de variables de entorno para depuración (Sin revelar secretos)
+if (!process.env.AI_GATEWAY_API_KEY) {
+  logger.error("!!! ERROR CRÍTICO: AI_GATEWAY_API_KEY no cargada desde .env !!!");
+  logger.info(`CWD actual: ${process.cwd()}`);
+} else {
+  logger.info("✅ AI_GATEWAY_API_KEY cargada correctamente.");
+}
+
+if (process.env.AI_MODEL_NAME) {
+  logger.info(`Usando modelo configurado: ${process.env.AI_MODEL_NAME}`);
+}
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
