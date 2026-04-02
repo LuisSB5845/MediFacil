@@ -147,7 +147,7 @@ export function createChat() {
 }
 
 export const models = {
-  pro: "gemini-1.5-flash",
-  flash: "gemini-1.5-flash",
-  image: "gemini-1.5-flash",
+  pro: "gemini-2.0-flash",
+  flash: "gemini-2.0-flash",
+  image: "gemini-2.0-flash",
 };

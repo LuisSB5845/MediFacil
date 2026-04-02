@@ -26,7 +26,7 @@ const google = createGoogleGenerativeAI({
 
 // Opción para cambiar de proveedor o modelo fácilmente
 // Solo cambia esta variable o el valor en .env para usar otro modelo (ej: gemini-1.5-pro)
-const aiModelName = process.env.AI_MODEL_NAME || "gemini-1.5-pro";
+const aiModelName = process.env.AI_MODEL_NAME || "gemini-2.0-flash";
 const model = google(aiModelName);
 
 
