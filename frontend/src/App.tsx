@@ -106,9 +106,6 @@ import {
 
 const ADMIN_EMAILS = ["androxus512rbm@gmail.com", "luise.sb5845@gmail.com"];
 
-const STRIPE_MONTHLY_URL = "https://buy.stripe.com/test_28E3cxfmlb6Ha5b6zz6kg04";
-const STRIPE_YEARLY_URL = "https://buy.stripe.com/test_14A28tded4Ija5b3nn6kg05";
-
 // --- Animation Components ---
 
 const ScrollProgressBar = () => {
@@ -573,10 +570,8 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
                     </motion.li>
                   ))}
                 </ul>
-                <a 
-                  href={STRIPE_MONTHLY_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button 
+                  onClick={onLogin}
                   className="w-full h-16 rounded-3xl bg-white text-[#191970] flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl relative overflow-hidden group/btn"
                 >
                   <span className="relative z-10">Elegir Plan Médico</span>
@@ -585,7 +580,7 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
                     animate={{ translateX: ["100%", "-100%"] }}
                     transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
                   />
-                </a>
+                </button>
               </div>
             </motion.div>
 
@@ -624,14 +619,12 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
                   </motion.li>
                 ))}
               </ul>
-              <a 
-                href={STRIPE_YEARLY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button 
+                onClick={onLogin}
                 className="w-full h-14 rounded-2xl bg-white/10 border border-white/10 text-white text-xs font-black uppercase tracking-widest hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center"
               >
                 Elegir Plan Anual Médico
-              </a>
+              </button>
             </motion.div>
           </div>
         </div>

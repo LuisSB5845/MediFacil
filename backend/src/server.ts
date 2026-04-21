@@ -156,6 +156,63 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Servidor MediFácil operando con seguridad mejorada.' });
 });
 
+// --- STRIPE DYNAMIC CHECKOUT ROUTES ---
+
+// Endpoint para crear una sesión de Checkout de Stripe
+app.post('/api/stripe/create-checkout-session', async (req, res) => {
+  const { priceId, userId, userEmail } = req.body;
+
+  if (!priceId || !userId) {
+    return res.status(400).json({ error: 'Faltan parámetros: priceId o userId' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/?payment_success=true`,
+      cancel_url: `${req.headers.origin}/?payment_cancel=true`,
+      customer_email: userEmail,
+      client_reference_id: userId,
+      metadata: {
+        userId: userId,
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    logger.error('Error creando sesión de checkout:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para crear una sesión del Portal de Cliente de Stripe
+app.post('/api/stripe/create-portal-session', async (req, res) => {
+  const { customerId } = req.body;
+
+  if (!customerId) {
+    return res.status(400).json({ error: 'Falta customerId' });
+  }
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${req.headers.origin}/plans`,
+    });
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    logger.error('Error creando sesión de portal:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- WEBHOOK DE STRIPE ---
 
 app.post('/api/webhook/stripe', async (req, res) => {

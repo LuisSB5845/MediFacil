@@ -9,7 +9,8 @@ import {
   Users, 
   BriefcaseMedical,
   ArrowRight,
-  BadgeCheck
+  BadgeCheck,
+  CreditCard
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -96,25 +97,69 @@ const PlanCard = ({
 };
 
 const PaymentPlans = ({ user }: { user: any }) => {
-  const stripeLinks = {
-    monthly: 'https://buy.stripe.com/test_28E3cxfmlb6Ha5b6zz6kg04',
-    yearly: 'https://buy.stripe.com/test_14A28tded4Ija5b3nn6kg05'
+  const API_URL = (import.meta as any).env.VITE_API_URL || "/api";
+  const PRICE_IDS = {
+    monthly: (import.meta as any).env.VITE_STRIPE_MONTHLY_PRICE_ID,
+    yearly: (import.meta as any).env.VITE_STRIPE_YEARLY_PRICE_ID
   };
 
-  const currentUrl = window.location.origin;
-
-  const handleSubscribe = (baseUrl: string) => {
+  const handleSubscribe = async (priceId: string) => {
     if (!user) {
       alert("Por favor inicia sesión para suscribirte.");
       return;
     }
-    const checkoutUrl = new URL(baseUrl);
-    checkoutUrl.searchParams.append('prefilled_email', user.email);
-    checkoutUrl.searchParams.append('client_reference_id', user.uid);
-    // Note: Checkout Session success_url can't be set via query param on a static link, 
-    // but we can detect the return if the Stripe link is configured to redirect back.
-    // Assuming the Stripe Payment Link is configured to redirect to: currentUrl + "?payment_success=true"
-    window.open(checkoutUrl.toString(), '_blank');
+
+    if (!priceId) {
+      alert("Error: Price ID no configurado.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/stripe/create-checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priceId,
+          userId: user.uid,
+          userEmail: user.email
+        }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || "No se pudo obtener la URL de pago");
+      }
+    } catch (error: any) {
+      console.error("Error iniciando pago:", error);
+      alert("Error al conectar con Stripe: " + error.message);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    if (!user?.stripeCustomerId) {
+      alert("No se encontró información de facturación activa.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/stripe/create-portal-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: user.stripeCustomerId }),
+      });
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || "No se pudo obtener la URL del portal");
+      }
+    } catch (error: any) {
+      console.error("Error abriendo portal de facturación:", error);
+      alert("Error al abrir gestión de facturación: " + error.message);
+    }
   };
 
   const plans = [
@@ -149,7 +194,7 @@ const PaymentPlans = ({ user }: { user: any }) => {
       ],
       buttonText: user?.plan === 'pro' ? "Plan Actual" : "Suscribirse Ahora",
       isPopular: true,
-      onSubscribe: () => user?.plan === 'pro' ? alert('Ya tienes este plan activo.') : handleSubscribe(stripeLinks.monthly),
+      onSubscribe: () => user?.plan === 'pro' ? alert('Ya tienes este plan activo.') : handleSubscribe(PRICE_IDS.monthly),
       icon: BriefcaseMedical,
       gradient: "from-[#191970] to-[#2a2a9a]"
     },
@@ -167,7 +212,7 @@ const PaymentPlans = ({ user }: { user: any }) => {
       ],
       buttonText: user?.plan === 'pro' ? "Plan Actual" : "Elegir Plan Anual",
       isPopular: false,
-      onSubscribe: () => user?.plan === 'pro' ? alert('Plan Pro activo. Para cambios a facturación anual contáctanos.') : handleSubscribe(stripeLinks.yearly),
+      onSubscribe: () => user?.plan === 'pro' ? alert('Plan Pro activo. Para cambios a facturación anual contáctanos.') : handleSubscribe(PRICE_IDS.yearly),
       icon: Sparkles,
       gradient: "from-[#083825] to-[#125c3d]"
     }
@@ -192,6 +237,22 @@ const PaymentPlans = ({ user }: { user: any }) => {
         <p className="max-w-2xl mx-auto text-lg text-slate-500 font-medium leading-relaxed">
           Nuestros planes están diseñados para adaptarse al crecimiento de tu práctica médica, desde el inicio individual hasta la gestión clínica completa.
         </p>
+        
+        {user?.plan === 'pro' && user?.stripeCustomerId && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8"
+          >
+            <button 
+              onClick={handleManageBilling}
+              className="px-8 py-3 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl flex items-center gap-2 mx-auto"
+            >
+              <CreditCard className="w-4 h-4" />
+              Gestionar Facturación y Plan
+            </button>
+          </motion.div>
+        )}
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
