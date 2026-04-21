@@ -901,6 +901,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
         </button>
       </div>
     </aside>
+    </>
   );
 };
 
