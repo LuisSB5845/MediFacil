@@ -8,7 +8,8 @@ import {
   User, 
   Users, 
   BriefcaseMedical,
-  ArrowRight
+  ArrowRight,
+  BadgeCheck
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -128,9 +129,9 @@ const PaymentPlans = ({ user }: { user: any }) => {
         "Seguridad de datos estándar",
         "Panel de dashboard clínico"
       ],
-      buttonText: "Plan Actual",
+      buttonText: (!user?.plan || user?.plan === 'free') ? "Plan Actual" : "Plan Básico",
       isPopular: false,
-      onSubscribe: () => alert('Ya estás en el plan gratuito.'),
+      onSubscribe: () => alert('Ya estás en el plan gratuito o tienes uno superior.'),
       icon: User,
       gradient: "from-slate-400 to-slate-600"
     },
@@ -146,9 +147,9 @@ const PaymentPlans = ({ user }: { user: any }) => {
         "Personalización de recetas",
         "Soporte prioritario"
       ],
-      buttonText: "Suscribirse Ahora",
+      buttonText: user?.plan === 'pro' ? "Plan Actual" : "Suscribirse Ahora",
       isPopular: true,
-      onSubscribe: () => handleSubscribe(stripeLinks.monthly),
+      onSubscribe: () => user?.plan === 'pro' ? alert('Ya tienes este plan activo.') : handleSubscribe(stripeLinks.monthly),
       icon: BriefcaseMedical,
       gradient: "from-[#191970] to-[#2a2a9a]"
     },
@@ -164,9 +165,9 @@ const PaymentPlans = ({ user }: { user: any }) => {
         "Analítica avanzada de la clínica",
         "Sello de Verificación MediFácil"
       ],
-      buttonText: "Elegir Plan Anual",
+      buttonText: user?.plan === 'pro' ? "Plan Actual" : "Elegir Plan Anual",
       isPopular: false,
-      onSubscribe: () => handleSubscribe(stripeLinks.yearly),
+      onSubscribe: () => user?.plan === 'pro' ? alert('Plan Pro activo. Para cambios a facturación anual contáctanos.') : handleSubscribe(stripeLinks.yearly),
       icon: Sparkles,
       gradient: "from-[#083825] to-[#125c3d]"
     }
@@ -182,6 +183,12 @@ const PaymentPlans = ({ user }: { user: any }) => {
         <h2 className="text-5xl font-black text-[#191970] tracking-tight mb-4">
           Elige el Pulso de tu <span className="text-primary italic">Atelier Clínico</span>
         </h2>
+        {user?.plan && (
+          <div className="mb-8 inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl shadow-sm text-green-700 font-black text-sm uppercase tracking-widest animate-in fade-in slide-in-from-top-2 duration-500">
+            <BadgeCheck className="w-4 h-4" />
+            Plan Actual: <span className="text-emerald-800">{user.plan === 'pro' ? 'PROFESIONAL' : 'GRATUITO'}</span>
+          </div>
+        )}
         <p className="max-w-2xl mx-auto text-lg text-slate-500 font-medium leading-relaxed">
           Nuestros planes están diseñados para adaptarse al crecimiento de tu práctica médica, desde el inicio individual hasta la gestión clínica completa.
         </p>

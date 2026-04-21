@@ -777,13 +777,15 @@ const LandingPage = ({ onLogin }: { onLogin: () => void }) => {
 
 // --- Components ---
 
-const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPatient }: {
+const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPatient, isOpen, onClose }: {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   user: UserProfile | null;
   onLogout: () => void;
   isAdmin: boolean;
   onClearPatient: () => void;
+  isOpen: boolean;
+  onClose: () => void;
 }) => {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -795,38 +797,64 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
   ];
 
   return (
-    <aside className="fixed inset-y-0 left-0 flex flex-col justify-between py-6 px-4 sidebar-gradient h-screen w-64 overflow-y-auto z-50 shadow-ambient no-scrollbar">
-      <div className="space-y-8">
-        <div className="flex items-center gap-4 px-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-lg">
-            <BriefcaseMedical className="w-7 h-7 text-white fill-white/20" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white leading-none">MediFácil</h1>
-            <p className="text-[9px] uppercase tracking-[0.25em] text-white/40 font-extrabold mt-1">THE CLINICAL ATELIER</p>
-          </div>
-        </div>
-        <nav className="space-y-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                onClearPatient();
-              }}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200",
-                activeTab === tab.id 
-                  ? "bg-white/10 backdrop-blur-md rounded-lg text-white font-bold scale-95 active:scale-90" 
-                  : "text-white/70 hover:text-white hover:bg-white/5"
-              )}
+    <>
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/50 z-[45] md:hidden backdrop-blur-sm"
+          />
+        )}
+      </AnimatePresence>
+
+      <aside className={cn(
+        "fixed inset-y-0 left-0 flex flex-col justify-between py-6 px-4 sidebar-gradient h-screen w-64 overflow-y-auto z-50 shadow-ambient no-scrollbar transition-transform duration-300 md:translate-x-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="space-y-8">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-lg">
+                <BriefcaseMedical className="w-7 h-7 text-white fill-white/20" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">MediFácil</h1>
+                <p className="text-[9px] uppercase tracking-[0.25em] text-white/40 font-extrabold mt-1">THE CLINICAL ATELIER</p>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="md:hidden p-2 text-white/70 hover:text-white"
             >
-              <tab.icon className={cn("w-5 h-5", activeTab === tab.id && "fill-current")} />
-              <span className="text-sm">{tab.label}</span>
+              <X className="w-6 h-6" />
             </button>
-          ))}
-        </nav>
-      </div>
+          </div>
+          <nav className="space-y-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  onClearPatient();
+                  if (window.innerWidth < 768) onClose();
+                }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200",
+                  activeTab === tab.id 
+                    ? "bg-white/10 backdrop-blur-md rounded-lg text-white font-bold scale-95 active:scale-90" 
+                    : "text-white/70 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <tab.icon className={cn("w-5 h-5", activeTab === tab.id && "fill-current")} />
+                <span className="text-sm">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
       <div className="space-y-4">
         {/* Upgrade CTA */}
         {user?.plan === 'free' && (
@@ -876,15 +904,28 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
   );
 };
 
-const Header = ({ title, subtitle, search, onSearchChange, setActiveTab }: { title: string; subtitle?: string; search: string; onSearchChange: (s: string) => void; setActiveTab: (t: string) => void }) => {
+const Header = ({ title, subtitle, search, onSearchChange, setActiveTab, onToggleSidebar }: { title: string; subtitle?: string; search: string; onSearchChange: (s: string) => void; setActiveTab: (t: string) => void; onToggleSidebar: () => void }) => {
   return (
-    <header className="sticky top-0 z-40 flex justify-between items-center w-full px-8 py-4 bg-white/70 backdrop-blur-xl transition-all focus-within:ring-1 ring-[#191970]/15">
+    <header className="sticky top-0 z-40 flex justify-between items-center w-full px-4 md:px-8 py-4 bg-white/70 backdrop-blur-xl transition-all focus-within:ring-1 ring-[#191970]/15 gap-4">
+      <div className="flex items-center gap-3">
+        <button 
+          onClick={onToggleSidebar}
+          className="md:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors text-primary"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
+        <div className="hidden sm:block">
+          <h2 className="text-lg font-bold text-primary truncate max-w-[150px] md:max-w-none">{title}</h2>
+          {subtitle && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[150px] md:max-w-none">{subtitle}</p>}
+        </div>
+      </div>
+
       <div className="flex items-center flex-1 max-w-md">
         <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 md:w-5 h-4 md:h-5" />
           <input 
-            className="w-full bg-surface-container-high border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary-container placeholder:text-slate-400 outline-none" 
-            placeholder="Buscar pacientes, documentos o citas..." 
+            className="w-full bg-surface-container-high border-none rounded-full py-2 pl-9 md:pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary-container placeholder:text-slate-400 outline-none" 
+            placeholder="Buscar..." 
             type="text"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
@@ -978,14 +1019,14 @@ const PatientsList = ({
   const recentPatients = sortedPatients.slice(0, 6);
 
   return (
-    <div className="p-10 space-y-12">
+    <div className="p-4 md:p-10 space-y-8 md:space-y-12">
       {/* Zone 1: Search and Add */}
       <section>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-6">
           <div className="relative flex-grow">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface-variant w-6 h-6" />
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface-variant w-5 h-5 md:w-6 md:h-6" />
             <input 
-              className="w-full h-16 pl-16 pr-6 rounded-full bg-surface-container-low border-none focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all text-lg font-medium placeholder:text-on-surface-variant/60" 
+              className="w-full h-14 md:h-16 pl-14 md:pl-16 pr-6 rounded-2xl md:rounded-full bg-surface-container-low border-none focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all text-base md:text-lg font-medium placeholder:text-on-surface-variant/60" 
               placeholder="Buscar por nombre o cédula..." 
               type="text"
               value={search}
@@ -994,7 +1035,7 @@ const PatientsList = ({
           </div>
           <button 
             onClick={onAddPatient}
-            className="h-16 px-8 bg-gradient-to-r from-[#191970] to-[#083825] text-white rounded-full font-bold flex items-center gap-3 shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
+            className="h-14 md:h-16 px-8 sidebar-gradient text-white rounded-2xl md:rounded-full font-bold flex items-center justify-center gap-3 shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
           >
             <Plus className="w-6 h-6" />
             <span>Agregar Paciente</span>
@@ -1003,50 +1044,48 @@ const PatientsList = ({
       </section>
 
       {/* Zone 2: Recent Patients */}
-      <section>
-        <div className="flex items-center justify-between mb-8">
-          <h3 className="text-xl font-bold tracking-tight text-[#191970]">Vistos recientemente</h3>
-          <div className="h-[2px] flex-grow mx-8 bg-gradient-to-r from-outline-variant/20 to-transparent"></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recentPatients.map(patient => (
-            <div key={patient.id} className="group bg-surface-container-lowest rounded-xl p-5 shadow-[0px_10px_30px_rgba(25,25,112,0.04)] hover:shadow-xl transition-all border border-outline-variant/10 flex flex-col justify-between h-48">
-              <div className="flex items-start justify-between">
-                <div className="flex gap-4">
-                  <div className="w-14 h-14 rounded-full bg-primary/5 flex items-center justify-center text-primary font-bold text-xl border border-primary/10">
-                    {patient.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-[#191970] text-lg group-hover:text-primary transition-colors">{patient.name}</h4>
-                    <p className="text-xs font-bold text-outline-variant uppercase tracking-widest mt-0.5">{patient.age} años</p>
+      {recentPatients.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-6 md:mb-8">
+            <h3 className="text-lg md:text-xl font-bold tracking-tight text-[#191970]">Vistos recientemente</h3>
+            <div className="hidden sm:block h-[2px] flex-grow mx-8 bg-gradient-to-r from-outline-variant/20 to-transparent"></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+            {recentPatients.map(patient => (
+              <div key={patient.id} className="group bg-surface-container-lowest rounded-xl p-5 shadow-[0px_10px_30px_rgba(25,25,112,0.04)] hover:shadow-xl transition-all border border-outline-variant/10 flex flex-col justify-between h-44 md:h-48">
+                <div className="flex items-start justify-between">
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-primary/5 flex items-center justify-center text-primary font-bold text-lg md:text-xl border border-primary/10">
+                      {patient.name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-[#191970] text-base md:text-lg group-hover:text-primary transition-colors line-clamp-1">{patient.name}</h4>
+                      <p className="text-[10px] md:text-xs font-bold text-outline-variant uppercase tracking-widest mt-0.5">{patient.age} años</p>
+                    </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Última consulta</p>
-                  <p className="text-sm font-semibold text-[#191970]">Reciente</p>
-                </div>
+                <button 
+                  onClick={() => onStartConsultation(patient)}
+                  className="w-full h-10 md:h-12 rounded-lg bg-surface-container-low text-primary font-bold text-sm hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2 group/btn"
+                >
+                  <FileText className="w-4 h-4 md:w-5 md:h-5" />
+                  Nueva Consulta
+                </button>
               </div>
-              <button 
-                onClick={() => onStartConsultation(patient)}
-                className="w-full h-12 rounded-lg bg-surface-container-low text-primary font-bold text-sm hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2 group/btn"
-              >
-                <FileText className="w-5 h-5" />
-                Nueva Consulta
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Zone 3: General List */}
       <section className="mb-20">
-        <div className="flex items-center justify-between mb-8">
-          <h3 className="text-xl font-bold tracking-tight text-[#191970]">Lista General de Pacientes</h3>
-          <div className="flex items-center gap-2 relative">
-            <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Filtrar por:</span>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 md:mb-8">
+          <h3 className="text-lg md:text-xl font-bold tracking-tight text-[#191970]">Lista General de Pacientes</h3>
+          <div className="flex items-center gap-2 relative w-full sm:w-auto">
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Filtrar:</span>
             <button 
               onClick={() => setShowFilterMenu(!showFilterMenu)}
-              className="px-4 py-1.5 rounded-full bg-white text-xs font-bold text-[#191970] border border-outline-variant/30 flex items-center gap-2 hover:bg-surface-container-low transition-colors"
+              className="flex-grow sm:flex-grow-0 px-4 py-1.5 rounded-full bg-white text-xs font-bold text-[#191970] border border-outline-variant/30 flex items-center justify-between sm:justify-start gap-2 hover:bg-surface-container-low transition-colors"
             >
               {filterLabels[dateFilter]} <ChevronDown className={cn("w-4 h-4 transition-transform", showFilterMenu && "rotate-180")} />
             </button>
@@ -1193,32 +1232,33 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
   const lastPatient = sortedPatients.length > 0 ? sortedPatients[0] : null;
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-4 md:p-8 space-y-6 md:space-y-8">
       {/* Banner Section */}
-      <section className="relative h-[280px] rounded-xl overflow-hidden shadow-xl">
+      <section className="relative h-[200px] md:h-[280px] rounded-xl overflow-hidden shadow-xl">
         <img 
           src="https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&q=80&w=1000" 
           alt="Clinical Atelier Header" 
           className="absolute inset-0 w-full h-full object-cover" 
           referrerPolicy="no-referrer"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/80 via-primary/40 to-transparent flex items-center px-12">
-          <div className="max-w-xl space-y-4">
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/90 via-primary/50 to-transparent flex items-center px-6 md:px-12">
+          <div className="max-w-xl space-y-2 md:space-y-4">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
               <span className="w-2 h-2 bg-secondary rounded-full"></span>
-              <span className="text-[10px] text-white uppercase font-bold tracking-widest">Sistema Operativo v2.4</span>
+              <span className="text-[8px] md:text-[10px] text-white uppercase font-bold tracking-widest">Sistema Operativo v2.4</span>
             </div>
-            <h2 className="text-[4rem] font-bold text-white leading-tight tracking-tight">
+            <h2 className="text-3xl md:text-[4rem] font-bold text-white leading-tight tracking-tight">
               {user?.gender === 'female' ? "Bienvenida, Dra. " : "Bienvenido, Dr. "}
-              {user?.displayName ? (
-                (() => {
-                  const parts = user.displayName.trim().split(/\s+/);
-                  // Display first name and first last name
-                  return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
-                })()
-              ) : "Especialista"}
+              <span className="block md:inline">
+                {user?.displayName ? (
+                  (() => {
+                    const parts = user.displayName.trim().split(/\s+/);
+                    return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
+                  })()
+                ) : "Especialista"}
+              </span>
             </h2>
-            <p className="text-xl text-white/80 font-medium">Gestione sus consultas con la precisión de un atelier digital.</p>
+            <p className="text-sm md:text-xl text-white/80 font-medium">Gestione sus consultas con precisión digital.</p>
           </div>
         </div>
       </section>
@@ -1912,6 +1952,7 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfig, setDeleteConfig] = useState<{ message: string, onConfirm: () => void } | null>(null);
   const [patientDateFilter, setPatientDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const isAdmin = (profile?.email || user?.email) 
     ? ADMIN_EMAILS.includes((profile?.email || user?.email || "").toLowerCase().trim()) 
@@ -1946,73 +1987,87 @@ export default function App() {
 
   useEffect(() => {
     testConnection();
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        
-        if (userDoc.exists()) {
-          const existingData = userDoc.data() as UserProfile;
-          
-          if (!existingData.displayName && firebaseUser.displayName) {
-            await updateDoc(doc(db, 'users', firebaseUser.uid), {
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL || existingData.photoURL
-            });
-            existingData.displayName = firebaseUser.displayName;
-            existingData.photoURL = firebaseUser.photoURL || existingData.photoURL;
-          }
-          
-          // Legacy usage reset check (keeping for safety during transition)
-          if (shouldResetMonthlyUsage(existingData.usageLastReset || existingData.usageResetDate)) {
-            await resetMonthlyUsage(firebaseUser.uid);
-            const refreshDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-            setProfile(refreshDoc.data() as UserProfile);
-          } else {
-            // Ensure admin role for designated emails
-            if (ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) && existingData.role !== 'admin') {
-              const updatedData = { ...existingData, role: 'admin' as const };
-              await updateDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' });
-              setProfile(updatedData);
-            } else {
-              setProfile(existingData);
-            }
-          }
+    let profileUnsubscribe: () => void;
 
-          // Payment success detection
-          const urlParams = new URLSearchParams(window.location.search);
-          if (urlParams.get('payment_success') === 'true' && existingData.plan === 'free') {
-            await updateDoc(doc(db, 'users', firebaseUser.uid), { plan: 'pro' });
-            setProfile({ ...existingData, plan: 'pro' });
-            window.history.replaceState({}, document.title, window.location.pathname);
-            alert("¡Felicidades! Tu plan ha sido actualizado a Pro exitosamente.");
+    const authUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      
+      // Limpiar escucha previa si existe
+      if (profileUnsubscribe) profileUnsubscribe();
+
+      if (firebaseUser) {
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        
+        // 🚀 ESCUCHA EN TIEMPO REAL DEL PERFIL
+        profileUnsubscribe = onSnapshot(userRef, async (userDoc) => {
+          if (userDoc.exists()) {
+            const existingData = userDoc.data() as UserProfile;
+            
+            // Lógica de mantenimiento del perfil (displayName, role, usage)
+            let needsUpdate = false;
+            let updatePayload: any = {};
+
+            if (!existingData.displayName && firebaseUser.displayName) {
+              needsUpdate = true;
+              updatePayload.displayName = firebaseUser.displayName;
+              updatePayload.photoURL = firebaseUser.photoURL || existingData.photoURL;
+            }
+
+            if (ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) && existingData.role !== 'admin') {
+              needsUpdate = true;
+              updatePayload.role = 'admin';
+            }
+
+            if (shouldResetMonthlyUsage(existingData.usageLastReset || existingData.usageResetDate)) {
+               await resetMonthlyUsage(firebaseUser.uid);
+               return; // El reset disparará de nuevo este onSnapshot
+            }
+
+            if (needsUpdate) {
+              await updateDoc(userRef, updatePayload);
+            }
+
+            // Detección de éxito de pago (Legacy para URL, pero ahora onSnapshot lo captará del Webhook)
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('payment_success') === 'true' && existingData.plan === 'free') {
+              await updateDoc(userRef, { plan: 'pro' });
+              window.history.replaceState({}, document.title, window.location.pathname);
+              alert("¡Felicidades! Tu plan ha sido actualizado a Pro exitosamente.");
+            }
+
+            setProfile(existingData);
+          } else {
+            // Inicializar perfil si no existe
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName || '',
+              email: firebaseUser.email || '',
+              photoURL: firebaseUser.photoURL || '',
+              plan: 'free',
+              role: ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) ? 'admin' : 'doctor',
+              consultationsThisMonth: 0,
+              documentsThisMonth: 0,
+              aiMessagesThisMonth: 0,
+              usageResetDate: new Date(
+                new Date().getFullYear(), 
+                new Date().getMonth() + 1, 
+                1
+              ).toISOString()
+            };
+            await setDoc(userRef, newProfile);
           }
-        } else {
-          const newProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            displayName: firebaseUser.displayName || '',
-            email: firebaseUser.email || '',
-            photoURL: firebaseUser.photoURL || '',
-            plan: 'free',
-            role: ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) ? 'admin' : 'doctor',
-            consultationsThisMonth: 0,
-            documentsThisMonth: 0,
-            aiMessagesThisMonth: 0,
-            usageResetDate: new Date(
-              new Date().getFullYear(), 
-              new Date().getMonth() + 1, 
-              1
-            ).toISOString()
-          };
-          await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
-          setProfile(newProfile);
-        }
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return unsubscribe;
+
+    return () => {
+      authUnsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -2197,7 +2252,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background overflow-x-hidden">
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -2205,8 +2260,10 @@ export default function App() {
         onLogout={handleLogout}
         isAdmin={isAdmin}
         onClearPatient={() => setSelectedPatient(null)}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
-      <div className="flex-1 ml-64 flex flex-col min-h-screen">
+      <div className="flex-1 md:ml-64 flex flex-col min-h-screen w-full">
         <Header 
           title={
             selectedPatient 
@@ -2227,6 +2284,7 @@ export default function App() {
           search={search}
           onSearchChange={setSearch}
           setActiveTab={setActiveTab}
+          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         />
         <main className="flex-1 overflow-y-auto no-scrollbar">
           <AnimatePresence mode="wait">
