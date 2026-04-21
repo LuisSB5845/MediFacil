@@ -9,6 +9,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from './utils/logger.js';
 import { sendDiscordAlert } from './utils/alerts.js';
+import Stripe from 'stripe';
+import admin from 'firebase-admin';
 
 // Configuración de variables de entorno - Carga desde la raíz del proyecto para mayor seguridad y compatibilidad
 dotenv.config();
@@ -24,6 +26,28 @@ if (!process.env.AI_GATEWAY_API_KEY) {
 if (process.env.AI_MODEL_NAME) {
   logger.info(`Usando modelo configurado: ${process.env.AI_MODEL_NAME}`);
 }
+
+// -- INICIALIZACIÓN DE STRIPE --
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2025-02-11' as any,
+});
+
+// -- INICIALIZACIÓN DE FIREBASE ADMIN --
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+  } else {
+    admin.initializeApp();
+  }
+  logger.info("✅ Firebase Admin inicializado correctamente.");
+} catch (error: any) {
+  logger.warn("⚠️ Firebase Admin no pudo inicializarse (usando entorno local o sin credenciales): " + error.message);
+}
+
+const db = admin.firestore();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -101,7 +125,10 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // 4. PARSEO DE BODY SEGURO
-// Limitamos el tamaño del payload para evitar ataques de memoria
+// IMPORTANTE: Stripe Webhook necesita el body crudo (raw) para verificar la firma
+app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));
+
+// Resto de la app usa JSON normal
 app.use(express.json({ limit: '10kb' }));
 
 // 5. VALIDACIÓN DE ENTRADAS (Zod)
@@ -127,6 +154,90 @@ const validate = (schema: z.ZodObject<any>) => (req: express.Request, res: expre
 // Ruta de Salud (Health Check)
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Servidor MediFácil operando con seguridad mejorada.' });
+});
+
+// --- WEBHOOK DE STRIPE ---
+
+app.post('/api/webhook/stripe', async (req, res) => {
+  const sig = req.headers['stripe-signature'] as string;
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret || '');
+  } catch (err: any) {
+    logger.error(`❌ Error en Webhook Signature: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  logger.info(`🔔 Stripe Event Received: ${event.type}`);
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const userId = session.client_reference_id;
+        
+        if (userId) {
+          await db.collection('users').doc(userId).update({
+            plan: 'pro',
+            stripeCustomerId: session.customer,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          logger.info(`✅ Usuario ${userId} ascendido a PLAN PRO.`);
+          
+          sendDiscordAlert({
+            title: 'Nueva Suscripción',
+            message: `El usuario ${userId} (${session.customer_details?.email}) se ha suscrito al Plan Pro.`,
+            level: 'info'
+          });
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+
+        const userSnapshot = await db.collection('users')
+          .where('stripeCustomerId', '==', customerId)
+          .limit(1)
+          .get();
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          await userDoc.ref.update({
+            plan: 'free',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          logger.info(`📉 Suscripción cancelada para el cliente ${customerId}. Usuario vuelto a PLAN FREE.`);
+          
+          sendDiscordAlert({
+            title: 'Suscripción Cancelada',
+            message: `La suscripción del cliente ${customerId} ha sido eliminada. El usuario ha vuelto al plan gratuito.`,
+            level: 'warn'
+          });
+        }
+        break;
+      }
+      
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        logger.warn(`⚠️ Pago fallido para la factura ${invoice.id} del cliente ${invoice.customer}`);
+        // Opcional: Notificar al usuario aquí o esperar a que la suscripción se borre
+        break;
+      }
+
+      default:
+        logger.info(`Unhandled event type ${event.type}`);
+    }
+  } catch (err: any) {
+    logger.error(`❌ Error procesando evento de Stripe: ${err.message}`);
+    return res.status(500).json({ error: 'Webhook processing failed' });
+  }
+
+  res.json({ received: true });
 });
 
 // Proxy Seguro para IA (Oculta la API Key del Cliente)
