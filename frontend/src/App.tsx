@@ -98,7 +98,10 @@ import { PatientProfile } from './components/PatientProfile';
 import { Patient, Consultation, UserProfile } from './types';
 import { 
   canUseAI, 
+  canAddPatient,
+  canCreateConsultation,
   incrementAIUsage, 
+  incrementConsultationUsage,
   resetMonthlyUsage, 
   shouldResetMonthlyUsage,
   formatUsageDisplay
@@ -2133,7 +2136,15 @@ export default function App() {
   };
 
   const handleAddPatient = async () => {
-    if (!user) return;
+    if (!user || !profile) return;
+    
+    const { allowed, limit } = canAddPatient(profile as any, patients.length);
+    if (!allowed) {
+      alert(`Has alcanzado el límite de ${limit} pacientes de tu plan gratuito. ¡Pásate al Plan Pro para registros ilimitados!`);
+      setActiveTab('plans');
+      return;
+    }
+
     try {
       const bmi = Number((newPatient.weight / (newPatient.height * newPatient.height)).toFixed(1));
       await addDoc(collection(db, 'patients'), {
@@ -2162,7 +2173,17 @@ export default function App() {
   };
 
   const handleAddConsultation = async () => {
-    if (!user || !selectedPatient) return;
+    if (!user || !selectedPatient || !profile) return;
+
+    // Consultations are currently unlimited as per user request, 
+    // but we check anyway in case rules change in usageLimits.ts
+    const { allowed } = canCreateConsultation(profile as any);
+    if (!allowed) {
+      alert("Has alcanzado el límite de consultas de tu plan.");
+      setActiveTab('plans');
+      return;
+    }
+
     try {
       await addDoc(collection(db, 'patients', selectedPatient.id, 'consultations'), {
         ...newConsultation,
@@ -2170,6 +2191,10 @@ export default function App() {
         patientId: selectedPatient.id,
         date: serverTimestamp()
       });
+      
+      // Increment usage stats
+      await incrementConsultationUsage(user.uid, profile.consultationsThisMonth || 0);
+
       setShowAddConsultation(false);
       setNewConsultation({
         type: 'Consulta General',
