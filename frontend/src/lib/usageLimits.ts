@@ -4,6 +4,7 @@ import { db } from './firebase';
 export type PlanType = 'free' | 'pro' | 'whitelisted';
 
 export interface UsageLimits {
+  maxPatients: number;
   maxConsultations: number;
   maxDocuments: number;
   maxAIMessages: number;
@@ -11,16 +12,19 @@ export interface UsageLimits {
 
 export const PLAN_LIMITS: Record<PlanType, UsageLimits> = {
   free: { 
-    maxConsultations: 20,
+    maxPatients: 20,
+    maxConsultations: Infinity,
     maxDocuments: 5,
     maxAIMessages: 20
   },
   pro: { 
+    maxPatients: Infinity,
     maxConsultations: Infinity,
     maxDocuments: Infinity,
     maxAIMessages: Infinity
   },
   whitelisted: { 
+    maxPatients: Infinity,
     maxConsultations: Infinity,
     maxDocuments: Infinity,
     maxAIMessages: Infinity
@@ -35,6 +39,23 @@ export interface UserProfileWithUsage {
   documentsThisMonth?: number;
   aiMessagesThisMonth?: number;
   usageResetDate?: string;
+  totalPatientsCount?: number;
+}
+
+/**
+ * Checks if the user can add a new patient.
+ */
+export function canAddPatient(user: UserProfileWithUsage | null, currentCount: number): { allowed: boolean; limit: number } {
+  if (!user) return { allowed: false, limit: 0 };
+  
+  if (user.role === 'admin' || user.plan === 'whitelisted' || user.plan === 'pro') {
+    return { allowed: true, limit: Infinity };
+  }
+
+  const limits = PLAN_LIMITS[user.plan || 'free'];
+  const allowed = currentCount < limits.maxPatients;
+
+  return { allowed, limit: limits.maxPatients };
 }
 
 /**
@@ -43,7 +64,6 @@ export interface UserProfileWithUsage {
 export function canUseAI(user: UserProfileWithUsage | null): { allowed: boolean; remaining: number; limit: number } {
   if (!user) return { allowed: false, remaining: 0, limit: 0 };
 
-  // Admins and Pro/Whitelisted plans have unlimited AI
   if (user.role === 'admin' || user.plan === 'whitelisted' || user.plan === 'pro') {
     return { allowed: true, remaining: Infinity, limit: Infinity };
   }
@@ -65,12 +85,13 @@ export function canCreateConsultation(user: UserProfileWithUsage | null): { allo
 
   const plan: PlanType = user.plan || 'free';
   const limits = PLAN_LIMITS[plan];
-  const currentUsage = user.consultationsThisMonth || 0;
-
+  
+  // Consultations are now unlimited for everyone based on user feedback
   if (limits.maxConsultations === Infinity) {
     return { allowed: true, remaining: Infinity, limit: Infinity };
   }
 
+  const currentUsage = user.consultationsThisMonth || 0;
   const remaining = Math.max(0, limits.maxConsultations - currentUsage);
   const allowed = currentUsage < limits.maxConsultations;
 
@@ -83,7 +104,7 @@ export function canCreateConsultation(user: UserProfileWithUsage | null): { allo
 export async function incrementAIUsage(uid: string, currentUsage: number): Promise<void> {
   if (!uid) return;
   await updateDoc(doc(db, 'users', uid), {
-    aiMessagesThisMonth: currentUsage + 1,
+    aiMessagesThisMonth: (currentUsage || 0) + 1,
   });
 }
 
@@ -93,7 +114,7 @@ export async function incrementAIUsage(uid: string, currentUsage: number): Promi
 export async function incrementConsultationUsage(uid: string, currentUsage: number): Promise<void> {
   if (!uid) return;
   await updateDoc(doc(db, 'users', uid), {
-    consultationsThisMonth: currentUsage + 1,
+    consultationsThisMonth: (currentUsage || 0) + 1,
   });
 }
 

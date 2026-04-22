@@ -182,9 +182,9 @@ const PaymentPlans = ({ user }: { user: any }) => {
       description: "Esencial para médicos que inician su digitalización clínica básica.",
       features: [
         "Hasta 20 registros de pacientes",
+        "Consultas ilimitadas",
         "Generador de documentos (Básico)",
-        "Seguridad de datos estándar",
-        "Panel de dashboard clínico"
+        "Seguridad de datos estándar"
       ],
       buttonText: (!user?.plan || user?.plan === 'free') ? "Plan Actual" : "Plan Básico",
       isPopular: false,
@@ -199,9 +199,9 @@ const PaymentPlans = ({ user }: { user: any }) => {
       description: "Potencia tu práctica con el asistente de IA avanzado y registros ilimitados.",
       features: [
         "Pacientes ilimitados",
+        "Consultas ilimitadas",
         "Asistente de IA Pro (Gemini)",
         "Análisis de imágenes médicas",
-        "Personalización de recetas",
         "Soporte prioritario"
       ],
       buttonText: user?.plan === 'pro' ? "Plan Actual" : "Suscribirse Ahora",
