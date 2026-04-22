@@ -8,9 +8,10 @@ import {
   User, 
   Users, 
   BriefcaseMedical,
-  ArrowRight,
   BadgeCheck,
-  CreditCard
+  CreditCard,
+  MessageCircle,
+  Clock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -80,18 +81,29 @@ const PlanCard = ({
         ))}
       </div>
 
-      <button
-        onClick={onSubscribe}
-        className={cn(
-          "w-full h-14 rounded-2xl flex items-center justify-center gap-2 font-black text-sm uppercase tracking-widest transition-all active:scale-95 group",
-          isPopular 
-            ? "bg-[#191970] text-white shadow-lg hover:shadow-primary/30" 
-            : "bg-slate-100 text-[#191970] hover:bg-slate-200"
-        )}
-      >
-        <span>{buttonText}</span>
-        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-      </button>
+      <div className="mt-auto space-y-4">
+        <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/50 backdrop-blur-sm">
+          <div className="flex gap-3 items-start">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] font-bold text-amber-900 leading-relaxed uppercase tracking-tight">
+              Los planes de pago estarán disponibles muy pronto. Si deseas acceso completo ahora mismo, contáctanos directamente.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href="https://wa.me/18298146363"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            "w-full h-14 rounded-2xl flex items-center justify-center gap-3 font-black text-xs uppercase tracking-widest transition-all active:scale-95 group",
+            "bg-[#25D366] text-white shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:scale-[1.02]"
+          )}
+        >
+          <MessageCircle className="w-5 h-5 transition-transform group-hover:scale-110" />
+          <span>Contáctanos por WhatsApp</span>
+        </a>
+      </div>
     </motion.div>
   );
 };
