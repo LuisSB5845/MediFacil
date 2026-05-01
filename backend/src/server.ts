@@ -131,8 +131,29 @@ app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));
 // Resto de la app usa JSON normal
 app.use(express.json({ limit: '10kb' }));
 
-// 5. VALIDACIÓN DE ENTRADAS (Zod)
-// Middleware de ejemplo para validar esquemas
+// 5. MIDDLEWARE DE AUTENTICACIÓN (Firebase Admin)
+// Verifica que el usuario esté logueado antes de permitir acceso a rutas sensibles (ej. IA)
+const authenticateUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No autorizado: Falta token de autenticación.' });
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    (req as any).user = decodedToken; // Guardamos el usuario decodificado en la request
+    next();
+  } catch (error: any) {
+    logger.error('Error verificando token de Firebase:', error.message);
+    return res.status(401).json({ error: 'Token inválido o expirado.' });
+  }
+};
+
+// 6. VALIDACIÓN DE ENTRADAS (Zod)
+// Middleware para validar esquemas
 const validate = (schema: z.ZodObject<any>) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
     schema.parse({
@@ -395,7 +416,7 @@ app.post('/api/ai/chat', async (req, res) => {
 });
 
 // Endpoint para Análisis de Imágenes Médicas
-app.post('/api/ai/analyze-image', async (req, res) => {
+app.post('/api/ai/analyze-image', authenticateUser, async (req, res) => {
   const { image, prompt } = req.body;
   
   if (!process.env.AI_GATEWAY_API_KEY) {
