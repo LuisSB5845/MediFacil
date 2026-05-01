@@ -1,4 +1,16 @@
+import { auth } from './firebase';
+
 const API_URL = (import.meta as any).env.VITE_API_URL || "/api";
+
+/**
+ * Get the current Firebase ID Token to send to the backend.
+ */
+async function getAuthHeader() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { "Authorization": `Bearer ${token}` };
+}
 
 export interface ClinicalDoc {
   patientName: string;
@@ -25,10 +37,12 @@ export async function generateClinicalDocumentStream(
   onStream: StreamCallback
 ): Promise<ClinicalDoc | null> {
   try {
+    const authHeader = await getAuthHeader();
     const response = await fetch(`${API_URL}/ai/analyze`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...authHeader
       },
       body: JSON.stringify({ prompt, context }),
     });
@@ -90,10 +104,12 @@ export async function generateClinicalDocument(prompt: string, context: string =
  */
 export async function analyzeMedicalImage(base64Image: string, prompt: string): Promise<string> {
   try {
+    const authHeader = await getAuthHeader();
     const response = await fetch(`${API_URL}/ai/analyze-image`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...authHeader
       },
       body: JSON.stringify({ image: base64Image, prompt }),
     });
@@ -116,10 +132,12 @@ export function createChat() {
   return {
     sendMessage: async (input: string) => {
       try {
+        const authHeader = await getAuthHeader();
         const response = await fetch(`${API_URL}/ai/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...authHeader
           },
           body: JSON.stringify({ prompt: input }),
         });
