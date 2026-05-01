@@ -1119,8 +1119,9 @@ const PatientsList = ({
           </div>
         </div>
         <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0px_10px_40px_rgba(25,25,112,0.03)] border border-outline-variant/10">
-          <table className="w-full text-left border-collapse">
-            <thead>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] text-left border-collapse">
+              <thead>
               <tr className="bg-surface-container-low/50">
                 <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em]">Nombre del Paciente</th>
                 <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em]">Cédula / ID</th>
@@ -1144,7 +1145,7 @@ const PatientsList = ({
                     {patient.createdAt ? new Date(patient.createdAt?.toDate ? patient.createdAt.toDate() : patient.createdAt).toLocaleDateString() : 'N/A'}
                   </td>
                   <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+                    <div className="flex items-center justify-end gap-2 opacity-100 translate-x-0 lg:opacity-0 lg:group-hover:opacity-100 transition-all duration-300 lg:translate-x-2 lg:group-hover:translate-x-0">
                       <button 
                         onClick={() => onSelectPatient(patient)}
                         className="flex items-center gap-2 px-3 py-1.5 hover:bg-primary/5 rounded-lg text-primary transition-all border border-transparent hover:border-primary/10" 
@@ -1171,9 +1172,10 @@ const PatientsList = ({
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
           {/* Pagination */}
-          <div className="px-8 py-6 flex items-center justify-between bg-surface-container-low/20">
+          <div className="px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface-container-low/20">
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Mostrando 1-{filteredPatients.length} de {patients.length} pacientes</p>
             <div className="flex items-center gap-2">
               <button className="w-10 h-10 flex items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-white transition-all">
@@ -1335,8 +1337,9 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
             </button>
           </div>
           <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-surface-container-low">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-left border-collapse">
+                <thead className="bg-surface-container-low">
                 <tr>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Paciente</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Última Visita</th>
@@ -1380,7 +1383,8 @@ const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation,
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
 
