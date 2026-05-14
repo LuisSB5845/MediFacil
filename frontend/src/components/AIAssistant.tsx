@@ -104,7 +104,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isLoading]);
 
   const createNewChat = async (initialTitle: string = "Nueva conversación") => {
     if (!user) return;
@@ -154,8 +154,12 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
         lastMessage: textToSend
       });
 
-      // 3. Call AI
-      const chat = createChat();
+      // 3. Call AI with History Context
+      const historyWithCurrent = [
+        ...messages,
+        { role: 'user', content: textToSend }
+      ];
+      const chat = createChat(historyWithCurrent);
       const result = await chat.sendMessage(textToSend);
       const aiResponse = await result.response.then(r => r.text());
 
@@ -164,6 +168,12 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
         role: 'assistant',
         content: aiResponse,
         createdAt: serverTimestamp()
+      });
+
+      // 5. Update Chat metadata with AI response
+      await updateDoc(doc(db, 'chats', chatId), {
+        updatedAt: serverTimestamp(),
+        lastMessage: aiResponse
       });
 
       if (profile) {
