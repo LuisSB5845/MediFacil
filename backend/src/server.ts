@@ -1,4 +1,5 @@
-import { streamObject, generateText, createGateway } from 'ai';
+import { generateText } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import dotenv from 'dotenv';
 import express from 'express';
 import helmet from 'helmet';
@@ -12,8 +13,9 @@ import { sendDiscordAlert } from './utils/alerts.js';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
 
-// Configuración de variables de entorno - Carga desde la raíz del proyecto para mayor seguridad y compatibilidad
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 // Registro de carga de variables de entorno para depuración (Sin revelar secretos)
 if (!process.env.AI_GATEWAY_API_KEY) {
@@ -52,39 +54,48 @@ const db = admin.firestore();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Inicializar el proveedor de Vercel AI Gateway
-const gateway = createGateway({
-  apiKey: process.env.AI_GATEWAY_API_KEY || "",
+// ── CONFIGURACIÓN DEL MODELO DE IA ──────────────────────────────────────────
+// Para cambiar de modelo: solo modificar AI_MODEL_NAME en .env
+// Ejemplos: gemma-4-26b-a4b-it | gemma-4-31b-it | gemini-2.0-flash | gemini-2.5-flash
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.AI_GATEWAY_API_KEY || process.env.GEMINI_API_KEY || "",
 });
+const aiModelName = process.env.AI_MODEL_NAME || "gemma-4-26b-a4b-it";
+const model = google(aiModelName);
+logger.info(`🤖 Modelo de IA activo: ${aiModelName}`);
+// ────────────────────────────────────────────────────────────────────────────
 
-// El backend decide qué IA utilizar basándose en AI_MODEL_NAME (ej: zai/glm-4.6v-flash)
-const aiModelName = process.env.AI_MODEL_NAME || "zai/glm-4.6v-flash";
-const model = gateway(aiModelName);
-
+// ── CARGA DE CONTEXTO DE LA APP (APP_CONTEXT.md) ────────────────────────────
+// Este archivo describe las funciones de MediFácil para que la IA pueda
+// responder preguntas sobre cómo usar la app. Editar en backend/APP_CONTEXT.md
+import fs from 'fs';
+let APP_CONTEXT = "";
+try {
+  const contextPath = path.resolve(__dirname, '../APP_CONTEXT.md');
+  APP_CONTEXT = fs.readFileSync(contextPath, 'utf-8');
+  logger.info("✅ APP_CONTEXT.md cargado correctamente.");
+} catch {
+  logger.warn("⚠️ APP_CONTEXT.md no encontrado. El asistente no tendrá contexto de la app.");
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 // 1. CONFIGURACIÓN DE SEGURIDAD (Helmet)
-// Añade cabeceras de seguridad HTTP (XSS, Clickjacking, etc.)
 app.use(helmet());
 
 // -- MIDDLEWARE DE MONITORIZACIÓN Y LOGGING --
-
-// Registro de cada petición entrante y monitoreo de tiempo de respuesta
 app.use((req, res, next) => {
   const start = Date.now();
-  
-  // LOG: Petición recibida (INFO)
-  logger.info(`HTTP ${req.method} ${req.url}`, { 
-    context: { ip: req.ip, userAgent: req.get('User-Agent') } 
+
+  logger.info(`HTTP ${req.method} ${req.url}`, {
+    context: { ip: req.ip, userAgent: req.get('User-Agent') }
   });
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    
-    // LOG: Desempeño (WARN si es lento > 1000ms)
+
     if (duration > 1000) {
       const slowMsg = `Slow Query detected: ${req.method} ${req.url} took ${duration}ms`;
       logger.warn(slowMsg);
-      // Opcional: Alerta si es crítico (ej: > 5s)
       if (duration > 5000) {
         sendDiscordAlert({
           title: 'Performance Critical',
@@ -99,7 +110,6 @@ app.use((req, res, next) => {
 });
 
 // 2. POLÍTICA CORS
-// Restringe quién puede llamar a esta API
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000'];
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -113,29 +123,42 @@ app.use(cors({
   credentials: true
 }));
 
-// 3. RATE LIMITING
-// Protege contra ataques de fuerza bruta o DoS
+// 3. RATE LIMITING POR IP (protección DoS general)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Límite de 100 peticiones por ventana por IP
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { error: 'Demasiadas peticiones. Intenta de nuevo más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
-// 4. PARSEO DE BODY SEGURO
-// IMPORTANTE: Stripe Webhook necesita el body crudo (raw) para verificar la firma
+// 4. PARSEO DE BODY
 app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));
-
-// Resto de la app usa JSON normal
 app.use(express.json({ limit: '10kb' }));
 
 // 5. MIDDLEWARE DE AUTENTICACIÓN (Firebase Admin)
-// Verifica que el usuario esté logueado antes de permitir acceso a rutas sensibles (ej. IA)
 const authenticateUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Bypass en entorno local si no hay FIREBASE_SERVICE_ACCOUNT
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT && process.env.NODE_ENV !== 'production') {
+    const authHeader = req.headers.authorization;
+    let mockUid = "local-dev-user";
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const idToken = authHeader.split('Bearer ')[1];
+        const payload = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64').toString());
+        mockUid = payload.user_id || payload.sub || mockUid;
+      } catch (e) {
+        // Ignorar error de decodificación
+      }
+    }
+    logger.warn(`Saltando autenticación en modo local. Usando UID extraído: ${mockUid}`);
+    (req as any).user = { uid: mockUid };
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No autorizado: Falta token de autenticación.' });
   }
@@ -144,7 +167,7 @@ const authenticateUser = async (req: express.Request, res: express.Response, nex
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    (req as any).user = decodedToken; // Guardamos el usuario decodificado en la request
+    (req as any).user = decodedToken;
     next();
   } catch (error: any) {
     logger.error('Error verificando token de Firebase:', error.message);
@@ -152,8 +175,61 @@ const authenticateUser = async (req: express.Request, res: express.Response, nex
   }
 };
 
-// 6. VALIDACIÓN DE ENTRADAS (Zod)
-// Middleware para validar esquemas
+// 6. RATE LIMITING POR USUARIO/PLAN (Firestore)
+// Límites diarios según plan — modificar aquí para ajustar cuotas
+const AI_LIMITS: Record<string, number> = {
+  free: 10,
+  pro: 100,
+  pro_clinica: 500,
+};
+
+const checkAIQuota = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT && process.env.NODE_ENV !== 'production') {
+    logger.warn("Saltando checkAIQuota en modo local por falta de credenciales");
+    return next();
+  }
+
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ error: 'No autorizado' });
+
+  const userId = user.uid;
+  const today = new Date().toISOString().split('T')[0]; // "2026-05-12"
+  const usageRef = db.collection('ai_usage').doc(userId);
+
+  try {
+    const userDoc = await db.collection('users').doc(userId).get();
+    const plan: string = userDoc.data()?.plan || 'free';
+    const limit = AI_LIMITS[plan] ?? AI_LIMITS.free;
+
+    const usageDoc = await usageRef.get();
+    const usageData = usageDoc.data() || {};
+    const todayCount: number = usageData[today] || 0;
+
+    if (todayCount >= limit) {
+      logger.warn(`Quota excedida para usuario ${userId} (plan: ${plan}, usado: ${todayCount}/${limit})`);
+      return res.status(429).json({
+        error: 'Límite diario de IA alcanzado.',
+        limit,
+        used: todayCount,
+        plan,
+        resetAt: 'midnight UTC',
+      });
+    }
+
+    // Incrementar contador antes de procesar (previene race conditions)
+    await usageRef.set({ [today]: todayCount + 1 }, { merge: true });
+
+    // Exponer datos de quota en la request para uso posterior
+    (req as any).aiQuota = { plan, used: todayCount + 1, limit };
+
+    next();
+  } catch (err: any) {
+    logger.error('Error verificando quota de IA:', err.message);
+    return res.status(500).json({ error: 'Error verificando límites de uso.' });
+  }
+};
+
+// 7. VALIDACIÓN DE ENTRADAS (Zod)
 const validate = (schema: z.ZodObject<any>) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
     schema.parse({
@@ -163,23 +239,26 @@ const validate = (schema: z.ZodObject<any>) => (req: express.Request, res: expre
     });
     next();
   } catch (err: any) {
-    return res.status(400).json({ 
-      error: 'Entrada no válida', 
-      details: err.errors.map((e: any) => ({ path: e.path, message: e.message })) 
+    return res.status(400).json({
+      error: 'Entrada no válida',
+      details: err.errors.map((e: any) => ({ path: e.path, message: e.message }))
     });
   }
 };
 
 // --- RUTAS API ---
 
-// Ruta de Salud (Health Check)
+// Health Check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Servidor MediFácil operando con seguridad mejorada.' });
+  res.status(200).json({
+    status: 'OK',
+    message: 'Servidor MediFácil operando con seguridad mejorada.',
+    aiModel: aiModelName,
+  });
 });
 
 // --- STRIPE DYNAMIC CHECKOUT ROUTES ---
 
-// Endpoint para crear una sesión de Checkout de Stripe
 app.post('/api/stripe/create-checkout-session', async (req, res) => {
   const { priceId, userId, userEmail } = req.body;
 
@@ -190,20 +269,13 @@ app.post('/api/stripe/create-checkout-session', async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
       success_url: `${req.headers.origin}/?payment_success=true`,
       cancel_url: `${req.headers.origin}/?payment_cancel=true`,
       customer_email: userEmail,
       client_reference_id: userId,
-      metadata: {
-        userId: userId,
-      },
+      metadata: { userId },
     });
 
     res.json({ url: session.url });
@@ -213,7 +285,6 @@ app.post('/api/stripe/create-checkout-session', async (req, res) => {
   }
 });
 
-// Endpoint para crear una sesión del Portal de Cliente de Stripe
 app.post('/api/stripe/create-portal-session', async (req, res) => {
   const { customerId } = req.body;
 
@@ -256,7 +327,7 @@ app.post('/api/webhook/stripe', async (req, res) => {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.client_reference_id;
-        
+
         if (userId) {
           await db.collection('users').doc(userId).update({
             plan: 'pro',
@@ -264,7 +335,7 @@ app.post('/api/webhook/stripe', async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           });
           logger.info(`✅ Usuario ${userId} ascendido a PLAN PRO.`);
-          
+
           sendDiscordAlert({
             title: 'Nueva Suscripción',
             message: `El usuario ${userId} (${session.customer_details?.email}) se ha suscrito al Plan Pro.`,
@@ -290,7 +361,7 @@ app.post('/api/webhook/stripe', async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           });
           logger.info(`📉 Suscripción cancelada para el cliente ${customerId}. Usuario vuelto a PLAN FREE.`);
-          
+
           sendDiscordAlert({
             title: 'Suscripción Cancelada',
             message: `La suscripción del cliente ${customerId} ha sido eliminada. El usuario ha vuelto al plan gratuito.`,
@@ -299,11 +370,10 @@ app.post('/api/webhook/stripe', async (req, res) => {
         }
         break;
       }
-      
+
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         logger.warn(`⚠️ Pago fallido para la factura ${invoice.id} del cliente ${invoice.customer}`);
-        // Opcional: Notificar al usuario aquí o esperar a que la suscripción se borre
         break;
       }
 
@@ -318,7 +388,10 @@ app.post('/api/webhook/stripe', async (req, res) => {
   res.json({ received: true });
 });
 
-// Proxy Seguro para IA (Oculta la API Key del Cliente)
+// --- ENDPOINTS DE IA ---
+// Todos protegidos con authenticateUser + checkAIQuota
+// Para cambiar modelo: solo modificar AI_MODEL_NAME en .env y redeploy
+
 const AISchema = z.object({
   body: z.object({
     prompt: z.string().min(1).max(5000),
@@ -326,99 +399,235 @@ const AISchema = z.object({
   }),
 });
 
-app.post('/api/ai/analyze', validate(AISchema), async (req, res) => {
+// ── HELPER: Consulta de contexto del doctor en Firestore ─────────────────────
+// Detecta la intención del mensaje y carga datos relevantes de la DB
+const buildDoctorContext = async (userId: string, userMessage: string): Promise<string> => {
+  const lowerMsg = userMessage.toLowerCase();
+  const contextParts: string[] = [];
+
+  try {
+    // Siempre cargar perfil básico del doctor
+    const userDoc = await db.collection('users').doc(userId).get();
+    const userData = userDoc.data();
+    if (userData) {
+      contextParts.push(`PERFIL DEL DOCTOR:
+- Nombre: ${userData.displayName || userData.name || 'No especificado'}
+- Email: ${userData.email || 'No especificado'}
+- Plan: ${userData.plan || 'free'}
+- Especialidad: ${userData.specialty || 'No especificada'}`);
+    }
+
+    // Si pregunta por pacientes → cargar lista de pacientes
+    const askingAboutPatients =
+      lowerMsg.includes('paciente') ||
+      lowerMsg.includes('cuantos') ||
+      lowerMsg.includes('cuántos') ||
+      lowerMsg.includes('lista') ||
+      lowerMsg.includes('registrado') ||
+      lowerMsg.includes('busca') ||
+      lowerMsg.includes('dime') ||
+      lowerMsg.includes('historial');
+
+    if (askingAboutPatients) {
+      const patientsSnap = await db.collection('patients')
+        .where('doctorId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(20) // Máximo 20 para no inflar el contexto
+        .get();
+
+      if (!patientsSnap.empty) {
+        const patientList = patientsSnap.docs.map(doc => {
+          const p = doc.data();
+          return `  - ${p.name || 'Sin nombre'} | ${p.age ? p.age + ' años' : 'edad N/D'} | ${p.diagnosis || 'sin diagnóstico'} | Registrado: ${p.createdAt?.toDate?.()?.toLocaleDateString('es-DO') || 'N/D'}`;
+        }).join('\n');
+
+        contextParts.push(`PACIENTES REGISTRADOS (${patientsSnap.size} de los más recientes):
+${patientList}`);
+      } else {
+        contextParts.push(`PACIENTES REGISTRADOS: Ninguno registrado aún.`);
+      }
+    }
+
+    // Si pregunta por consultas recientes
+    const askingAboutConsultations =
+      lowerMsg.includes('consulta') ||
+      lowerMsg.includes('cita') ||
+      lowerMsg.includes('reciente') ||
+      lowerMsg.includes('última') ||
+      lowerMsg.includes('ultima');
+
+    if (askingAboutConsultations) {
+      const consultSnap = await db.collection('consultations')
+        .where('doctorId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(10)
+        .get();
+
+      if (!consultSnap.empty) {
+        const consultList = consultSnap.docs.map(doc => {
+          const c = doc.data();
+          return `  - Paciente: ${c.patientName || 'N/D'} | Diagnóstico: ${c.diagnosis || 'N/D'} | Fecha: ${c.createdAt?.toDate?.()?.toLocaleDateString('es-DO') || 'N/D'}`;
+        }).join('\n');
+
+        contextParts.push(`CONSULTAS RECIENTES (últimas ${consultSnap.size}):
+${consultList}`);
+      } else {
+        contextParts.push(`CONSULTAS RECIENTES: Ninguna registrada aún.`);
+      }
+    }
+
+  } catch (err: any) {
+    logger.warn('Error cargando contexto del doctor:', err.message);
+    // No falla el chat si Firestore falla — continúa sin contexto de DB
+  }
+
+  return contextParts.join('\n\n');
+};
+// ────────────────────────────────────────────────────────────────────────────
+
+// Generador de Documentos Clínicos — Compatible con Gemma 4 (sin streamObject/responseSchema)
+app.post('/api/ai/analyze', authenticateUser, checkAIQuota, validate(AISchema), async (req, res) => {
   const { prompt, context } = req.body;
 
   try {
-    const ClinicalDocumentSchema = z.object({
-      patientName: z.string().describe("Full name of the patient"),
-      findings: z.string().describe("Narrative clinical findings and physical examination"),
-      diagnosis: z.string().describe("Presumptive diagnosis or ICD code"),
-      plan: z.string().describe("Immediate management plan, medications, or referrals"),
-      vitals: z.object({
-        bloodPressure: z.string().describe("Blood pressure reading (e.g., 120/80 mmHg)"),
-        heartRate: z.string().describe("Heart rate in bpm"),
-      }),
-    });
+    const fullPrompt = `Eres un asistente clínico médico profesional. Analiza las siguientes notas médicas y devuelve ÚNICAMENTE un objeto JSON válido con exactamente esta estructura, sin texto adicional antes ni después, sin bloques de markdown, sin explicaciones:
+ 
+{
+  "patientName": "nombre completo del paciente, o N/D si no se menciona",
+  "findings": "hallazgos clínicos narrativos detallados y examen físico",
+  "diagnosis": "diagnóstico presuntivo o código CIE-10 si aplica",
+  "plan": "plan de manejo inmediato, medicamentos con dosis si se mencionan, o referencias",
+  "vitals": {
+    "bloodPressure": "presión arterial ej: 120/80 mmHg, o N/D",
+    "heartRate": "frecuencia cardíaca en lpm, o N/D"
+  }
+}
+ 
+Información del doctor: ${context || "No especificada"}
+Notas médicas del doctor: "${prompt}"
+ 
+Recuerda: responde SOLO con el JSON, nada más.`;
 
-    const fullPrompt = `Analyze the following medical context and generate a structured clinical document.
-    Doctor Information: ${context || "Not specified"}
-    
-    Medical Notes/Dictation: "${prompt}"
-    
-    Generate professional medical content for each field. If a field like patient name or vitals is missing from the prompt, use a reasonable placeholder or "N/D".`;
-
-    const result = streamObject({
-      model: model,
-      schema: ClinicalDocumentSchema,
-      prompt: fullPrompt,
-    });
-
-    // Configurar cabeceras para streaming persistente
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    for await (const partialObject of result.partialObjectStream) {
-      if (partialObject) {
-        res.write(JSON.stringify(partialObject) + "\n");
-      }
+    const quota = (req as any).aiQuota;
+    if (quota) {
+      res.setHeader('X-AI-Quota-Used', quota.used);
+      res.setHeader('X-AI-Quota-Limit', quota.limit);
+      res.setHeader('X-AI-Quota-Plan', quota.plan);
     }
-    
+
+    const result = await generateText({
+      model: model,
+      prompt: fullPrompt,
+    });
+
+    // Limpiar posibles bloques de markdown que algunos modelos añaden
+    const clean = result.text
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    try {
+      const parsed = JSON.parse(clean);
+      res.write(JSON.stringify(parsed) + "\n");
+    } catch {
+      // Si el modelo no devolvió JSON válido, encapsular el texto en findings
+      logger.warn(`/api/ai/analyze: modelo no devolvió JSON válido, encapsulando texto.`);
+      res.write(JSON.stringify({
+        patientName: "N/D",
+        findings: result.text,
+        diagnosis: "N/D",
+        plan: "N/D",
+        vitals: { bloodPressure: "N/D", heartRate: "N/D" }
+      }) + "\n");
+    }
+
     res.end();
 
   } catch (error: any) {
     logger.error("Error calling AI SDK:", { error: error.message, stack: error.stack });
-    
+
     sendDiscordAlert({
       title: 'AI SDK Failure',
-      message: 'Critical error while processing streaming AI request.',
+      message: `Error en /api/ai/analyze. Model: ${aiModelName}`,
       level: 'error',
       context: { errMsg: error.message, path: '/api/ai/analyze' }
     });
 
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Error procesando solicitud de IA en tiempo real' });
+      res.status(500).json({ error: 'Error procesando solicitud de IA' });
     }
   }
 });
 
-// Endpoint para Chat Interactivo (Asistente)
-app.post('/api/ai/chat', async (req, res) => {
+// Chat Interactivo — Asistente con acceso a datos del doctor en Firestore
+app.post('/api/ai/chat', authenticateUser, checkAIQuota, async (req, res) => {
   const { messages, prompt } = req.body;
-  
+
   if (!process.env.AI_GATEWAY_API_KEY) {
     logger.error("Falta AI_GATEWAY_API_KEY en el servidor.");
     return res.status(500).json({ error: "Configuración incompleta: falta la Gateway API Key en el servidor." });
   }
 
   try {
-    const chatPrompt = prompt || (messages && messages[messages.length - 1]?.content);
-    
-    if (!chatPrompt) {
+    const userMessage = prompt || (messages && messages[messages.length - 1]?.content);
+
+    if (!userMessage) {
       return res.status(400).json({ error: "Mensaje vacío" });
     }
 
-    const systemMessage = "Eres un Asistente Clínico Inteligente para MediFácil. Ayudas a doctores a analizar casos, resumir historias clínicas y verificar datos de pacientes. Sé profesional, preciso y utiliza terminología médica adecuada. Siempre aclara que tus sugerencias deben ser validadas por el profesional médico.";
-    
+    const userId = (req as any).user.uid;
+
+    // Cargar contexto de Firestore según la intención del mensaje
+    const doctorContext = await buildDoctorContext(userId, userMessage);
+
+    // Construir el historial de conversación si viene del frontend
+    const conversationHistory = messages && messages.length > 1
+      ? messages.slice(0, -1).map((m: any) => `${m.role === 'user' ? 'Doctor' : 'Asistente'}: ${m.content}`).join('\n')
+      : '';
+
+    const fullPrompt = `Eres un Asistente Clínico Inteligente integrado en MediFácil, una plataforma de gestión médica para doctores.
+ 
+INSTRUCCIONES:
+- Ayudas al doctor con preguntas sobre sus pacientes, consultas, y el uso de la aplicación.
+- Cuando el doctor pregunta por sus datos (pacientes, consultas), usa EXCLUSIVAMENTE la información del contexto provisto — no inventes datos.
+- Si no hay datos en el contexto, indícalo claramente.
+- Para preguntas sobre cómo usar MediFácil, usa la documentación de la app provista.
+- Para preguntas clínicas generales, responde con criterio médico profesional y aclara que deben ser validadas por el profesional.
+- Responde siempre en español, de forma concisa y profesional.
+ 
+${APP_CONTEXT ? `DOCUMENTACIÓN DE MEDIFÁCIL:\n${APP_CONTEXT}\n` : ''}
+${doctorContext ? `DATOS DEL DOCTOR EN ESTE MOMENTO:\n${doctorContext}\n` : ''}
+${conversationHistory ? `HISTORIAL DE CONVERSACIÓN:\n${conversationHistory}\n` : ''}
+Doctor: ${userMessage}
+Asistente:`;
+
     const result = await generateText({
       model: model,
-      prompt: `System: ${systemMessage}\n\nUser: ${chatPrompt}`,
+      prompt: fullPrompt,
     });
 
-    res.json({ text: result.text });
+    const quota = (req as any).aiQuota;
+    res.json({
+      text: result.text,
+      quota: quota || null,
+    });
+
   } catch (error: any) {
     logger.error("Error en AI Chat Proxy:", { error: error.message, stack: error.stack });
-    res.status(500).json({ 
-      error: "Error en el asistente de IA", 
-      details: error.message // Lo incluimos para debuggear
+    res.status(500).json({
+      error: "Error en el asistente de IA",
+      details: error.message
     });
   }
 });
 
-// Endpoint para Análisis de Imágenes Médicas
-app.post('/api/ai/analyze-image', authenticateUser, async (req, res) => {
+// Análisis de Imágenes Médicas
+app.post('/api/ai/analyze-image', authenticateUser, checkAIQuota, async (req, res) => {
   const { image, prompt } = req.body;
-  
+
   if (!process.env.AI_GATEWAY_API_KEY) {
     return res.status(500).json({ error: "Configuración incompleta: falta la Gateway API Key." });
   }
@@ -431,27 +640,57 @@ app.post('/api/ai/analyze-image', authenticateUser, async (req, res) => {
           role: 'user',
           content: [
             { type: 'text', text: prompt || "Analiza esta imagen médica." },
-            { 
-              type: 'image', 
-              image: image.startsWith('data:') ? new URL(image) : image 
+            {
+              type: 'image',
+              image: image.startsWith('data:') ? new URL(image) : image
             },
           ],
         },
       ],
     });
 
-    res.json({ text: result.text });
+    const quota = (req as any).aiQuota;
+    res.json({
+      text: result.text,
+      quota: quota || null,
+    });
   } catch (error: any) {
     logger.error("Error en Image Analysis Proxy:", { error: error.message });
     res.status(500).json({ error: "Error analizando la imagen", details: error.message });
   }
 });
 
+// Consulta de Quota del Usuario (para mostrar en UI)
+app.get('/api/ai/usage', authenticateUser, async (req, res) => {
+  const user = (req as any).user;
+  const userId = user.uid;
+  const today = new Date().toISOString().split('T')[0];
 
-// Manejo de Errores Global (No revela detalles internos)
+  try {
+    const userDoc = await db.collection('users').doc(userId).get();
+    const plan: string = userDoc.data()?.plan || 'free';
+    const limit = AI_LIMITS[plan] ?? AI_LIMITS.free;
+
+    const usageDoc = await db.collection('ai_usage').doc(userId).get();
+    const todayCount: number = usageDoc.data()?.[today] || 0;
+
+    res.json({
+      plan,
+      used: todayCount,
+      limit,
+      remaining: Math.max(0, limit - todayCount),
+      resetAt: 'midnight UTC',
+    });
+  } catch (err: any) {
+    logger.error('Error obteniendo usage:', err.message);
+    res.status(500).json({ error: 'Error obteniendo datos de uso.' });
+  }
+});
+
+// Manejo de Errores Global
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error("Unhandled Global Error:", { error: err.message, stack: err.stack });
-  
+
   sendDiscordAlert({
     title: 'Unhandled Server Error',
     message: err.message || 'Unknown error',

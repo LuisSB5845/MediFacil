@@ -34,6 +34,21 @@ export interface Consultation {
   };
 }
 
+export interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: any;
+}
+
+export interface Chat {
+  id: string;
+  title: string;
+  doctorId: string;
+  createdAt: any;
+  updatedAt: any;
+  lastMessage?: string;
+}
+
 export interface UserProfile {
   uid: string;
   displayName: string;
@@ -52,4 +67,16 @@ export interface UserProfile {
   professionalId?: string;
   phone?: string;
   officeLocation?: string;
+}
+
+export interface ClinicalDocument {
+  id: string;
+  title: string;
+  subtitle: string;
+  type: 'ai' | 'template';
+  doctorId: string;
+  patientName?: string;
+  createdAt: any;
+  content: string;
+  templateType?: string;
 }
