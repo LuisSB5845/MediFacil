@@ -25,6 +25,7 @@ Este archivo proporciona una visión técnica y operativa de **MediFácil** para
   - `src/server.ts`: Punto de entrada con Express, Webhooks de Stripe y Proxy de IA.
   - `src/utils/`: Utilidades de logging (Winston) y alertas (Discord).
 - `docs/`: Documentación técnica y planes de implementación.
+  - `docs/APP_GUIDE.md`: Manual de usuario y guía para el Asistente de IA (Contexto operativo).
 - `scripts/`: Scripts de automatización para despliegue y rollback.
 - `firestore.rules`: Reglas de seguridad críticas para Firestore.
 
