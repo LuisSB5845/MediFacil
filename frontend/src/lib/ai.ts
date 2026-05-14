@@ -128,7 +128,7 @@ export async function analyzeMedicalImage(base64Image: string, prompt: string): 
  * Proxy implementation for Chat that mimics the expected assistant interface.
  * This avoids breaking the existing UI components.
  */
-export function createChat() {
+export function createChat(history: any[] = []) {
   return {
     sendMessage: async (input: string) => {
       try {
@@ -139,7 +139,10 @@ export function createChat() {
             "Content-Type": "application/json",
             ...authHeader
           },
-          body: JSON.stringify({ prompt: input }),
+          body: JSON.stringify({ 
+            prompt: input,
+            messages: history // Enviar el historial completo para tener contexto
+          }),
         });
 
         if (!response.ok) {

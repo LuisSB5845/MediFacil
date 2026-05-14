@@ -26,11 +26,11 @@ const colors = {
 
 winston.addColors(colors);
 
-// Formato personalizado para logs
+// Formato base para todos los logs
 const format = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
-  winston.format.metadata({ fillWith: ['timestamp', 'level', 'message', 'context'] }),
-  winston.format.json()
+  winston.format.errors({ stack: true }),
+  winston.format.splat()
 );
 
 // Transportes: Consola siempre, Archivos solo en desarrollo
@@ -56,6 +56,10 @@ if (process.env.NODE_ENV !== 'production') {
       maxSize: '20m',
       maxFiles: '14d',
       level: 'info',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+      )
     })
   );
   transports.push(
@@ -66,6 +70,10 @@ if (process.env.NODE_ENV !== 'production') {
       maxSize: '20m',
       maxFiles: '30d',
       level: 'error',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+      )
     })
   );
 }
