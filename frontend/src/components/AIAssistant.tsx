@@ -61,7 +61,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
 
     const q = query(
       collection(db, 'chats'),
-      where('doctorId', '==', user.uid),
+      where('doctorUid', '==', user.uid),
       orderBy('updatedAt', 'desc')
     );
 
@@ -70,9 +70,12 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       setChats(chatList);
       
       // If no active chat and there are chats, pick the first one
-      if (!activeChatId && chatList.length > 0) {
-        setActiveChatId(chatList[0].id);
-      }
+      setActiveChatId(current => {
+        if (!current && chatList.length > 0) {
+          return chatList[0].id;
+        }
+        return current;
+      });
     });
 
     return () => unsubscribe();
@@ -111,7 +114,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     
     const newChatRef = await addDoc(collection(db, 'chats'), {
       title: initialTitle,
-      doctorId: user.uid,
+      doctorUid: user.uid,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastMessage: ""
@@ -125,6 +128,8 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     const textToSend = overrideInput || input;
     if (!textToSend.trim() || isLoading || !user) return;
 
+    console.log("AI Assistant: Sending message...", { textToSend, activeChatId });
+
     if (profile && !canUseAI(profile as any).allowed) {
       alert("Has alcanzado el límite de mensajes de IA de tu plan. Actualiza a Pro para seguir conversando.");
       return;
@@ -136,12 +141,17 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     try {
       let chatId = activeChatId;
       if (!chatId) {
+        console.log("AI Assistant: Creating new chat...");
         chatId = await createNewChat(textToSend.substring(0, 30) + "...");
+        console.log("AI Assistant: New chat created with ID:", chatId);
       }
 
-      if (!chatId) return;
+      if (!chatId) {
+        throw new Error("No se pudo obtener o crear un ID de chat.");
+      }
 
       // 1. Add User Message to Firestore
+      console.log("AI Assistant: Adding user message to Firestore...");
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
         role: 'user',
         content: textToSend,
@@ -155,6 +165,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       });
 
       // 3. Call AI with History Context
+      console.log("AI Assistant: Calling AI proxy...");
       const historyWithCurrent = [
         ...messages,
         { role: 'user', content: textToSend }
@@ -162,8 +173,10 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       const chat = createChat(historyWithCurrent);
       const result = await chat.sendMessage(textToSend);
       const aiResponse = await result.response.then(r => r.text());
+      console.log("AI Assistant: AI response received:", aiResponse.substring(0, 50) + "...");
 
       // 4. Add AI Message to Firestore
+      console.log("AI Assistant: Adding assistant message to Firestore...");
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
         role: 'assistant',
         content: aiResponse,
@@ -180,8 +193,8 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
         await incrementAIUsage(user.uid, profile.aiMessagesThisMonth || 0);
       }
     } catch (error: any) {
-      console.error(error);
-      // Optional: Show error in UI
+      console.error("AI Assistant Error:", error);
+      alert(`Error en el asistente: ${error.message || "Error desconocido"}`);
     } finally {
       setIsLoading(false);
     }

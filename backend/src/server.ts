@@ -110,16 +110,18 @@ app.use((req, res, next) => {
 });
 
 // 2. POLÍTICA CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'];
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Permitir todos los orígenes locales en desarrollo
+    if (!origin || allowedOrigins.includes(origin) || origin.includes('localhost') || origin.includes('127.0.0.1')) {
       callback(null, true);
     } else {
+      logger.warn(`CORS Bloqueado para origen: ${origin}`);
       callback(new Error('No permitido por CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true
 }));
 
@@ -430,7 +432,7 @@ const buildDoctorContext = async (userId: string, userMessage: string): Promise<
 
     if (askingAboutPatients) {
       const patientsSnap = await db.collection('patients')
-        .where('doctorId', '==', userId)
+        .where('doctorUid', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(20) // Máximo 20 para no inflar el contexto
         .get();
@@ -458,7 +460,7 @@ ${patientList}`);
 
     if (askingAboutConsultations) {
       const consultSnap = await db.collection('consultations')
-        .where('doctorId', '==', userId)
+        .where('doctorUid', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(10)
         .get();
@@ -565,10 +567,11 @@ Recuerda: responde SOLO con el JSON, nada más.`;
 // Chat Interactivo — Asistente con acceso a datos del doctor en Firestore
 app.post('/api/ai/chat', authenticateUser, checkAIQuota, async (req, res) => {
   const { messages, prompt } = req.body;
+  logger.info("AI Chat Request received", { messageCount: messages?.length, hasPrompt: !!prompt });
 
-  if (!process.env.AI_GATEWAY_API_KEY) {
-    logger.error("Falta AI_GATEWAY_API_KEY en el servidor.");
-    return res.status(500).json({ error: "Configuración incompleta: falta la Gateway API Key en el servidor." });
+  if (!process.env.AI_GATEWAY_API_KEY && !process.env.GEMINI_API_KEY) {
+    logger.error("Faltan API Keys en el servidor.");
+    return res.status(500).json({ error: "Configuración incompleta: falta la API Key del asistente en el servidor." });
   }
 
   try {
@@ -579,9 +582,11 @@ app.post('/api/ai/chat', authenticateUser, checkAIQuota, async (req, res) => {
     }
 
     const userId = (req as any).user.uid;
+    logger.info(`Processing chat for user: ${userId}`);
 
     // Cargar contexto de Firestore según la intención del mensaje
     const doctorContext = await buildDoctorContext(userId, userMessage);
+    logger.info("Doctor context built successfully");
 
     // Construir el historial de conversación si viene del frontend
     const conversationHistory = messages && messages.length > 1
@@ -604,10 +609,12 @@ ${conversationHistory ? `HISTORIAL DE CONVERSACIÓN:\n${conversationHistory}\n` 
 Doctor: ${userMessage}
 Asistente:`;
 
+    logger.info("Sending prompt to AI model...");
     const result = await generateText({
       model: model,
       prompt: fullPrompt,
     });
+    logger.info("AI response generated successfully");
 
     const quota = (req as any).aiQuota;
     res.json({

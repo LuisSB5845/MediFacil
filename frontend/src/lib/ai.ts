@@ -1,6 +1,7 @@
 import { auth } from './firebase';
 
-const API_URL = (import.meta as any).env.VITE_API_URL || "/api";
+const API_URL = (import.meta as any).env.VITE_API_URL || 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:4000/api' : "/api");
 
 /**
  * Get the current Firebase ID Token to send to the backend.
