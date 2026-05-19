@@ -43,7 +43,7 @@ export interface Message {
 export interface Chat {
   id: string;
   title: string;
-  doctorId: string;
+  doctorUid: string;
   createdAt: any;
   updatedAt: any;
   lastMessage?: string;
@@ -74,7 +74,7 @@ export interface ClinicalDocument {
   title: string;
   subtitle: string;
   type: 'ai' | 'template';
-  doctorId: string;
+  doctorUid: string;
   patientName?: string;
   createdAt: any;
   content: string;

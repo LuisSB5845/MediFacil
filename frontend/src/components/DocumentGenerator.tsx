@@ -36,6 +36,11 @@ import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { createChat, analyzeMedicalImage } from '../lib/ai';
+import mammoth from 'mammoth';
+import * as pdfjs from 'pdfjs-dist';
+
+// Configurar el worker de PDF.js (necesario para que funcione en el navegador)
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
 type DocView = 'selection' | 'template' | 'ai';
 
@@ -55,7 +60,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
     if (!user) return;
     const q = query(
       collection(db, 'clinical_documents'),
-      where('doctorId', '==', user.uid),
+      where('doctorUid', '==', user.uid),
       orderBy('createdAt', 'desc'),
       limit(5)
     );
@@ -91,7 +96,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       const fetchPatients = async () => {
         const q = query(
           collection(db, 'patients'),
-          where('doctorId', '==', user?.uid),
+          where('doctorUid', '==', user?.uid),
           limit(5)
         );
         const snap = await getDocs(q);
@@ -108,6 +113,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
     setUploadedFile(file);
     setIsExtracting(true);
     setExtractedText('');
+    console.log("DocumentGenerator: Extracting text from file:", file.name, file.type);
 
     try {
       if (file.type.startsWith('image/')) {
@@ -118,10 +124,62 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             const base64 = reader.result as string;
             const text = await analyzeMedicalImage(base64, "Extrae fielmente todo el texto de este documento médico.");
             setExtractedText(text);
+            console.log("DocumentGenerator: Image text extracted.");
           } catch (e) {
-            console.error(e);
+            console.error("Error analizando imagen:", e);
+            alert("No se pudo extraer texto de la imagen.");
           }
         };
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        // Soporte para .docx usando mammoth
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          try {
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            setExtractedText(result.value);
+            console.log("DocumentGenerator: .docx text extracted.");
+          } catch (err) {
+            console.error("Error con mammoth:", err);
+            alert("Error al leer el archivo Word.");
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else if (file.type === 'application/pdf') {
+        // Soporte para .pdf usando pdfjs-dist
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          try {
+            const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            let fullText = "";
+            console.log(`DocumentGenerator: PDF loaded. Total pages: ${pdf.numPages}`);
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              const strings = content.items.map((item: any) => item.str);
+              fullText += `--- PÁGINA ${i} ---\n${strings.join(" ")}\n\n`;
+            }
+            setExtractedText(fullText);
+            console.log("DocumentGenerator: Multi-page PDF text extracted successfully.");
+          } catch (err) {
+            console.error("Error con PDF.js:", err);
+            alert("Error al leer el archivo PDF.");
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else if (file.type === 'text/plain') {
+        // Soporte para .txt
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setExtractedText(e.target?.result as string);
+          console.log("DocumentGenerator: .txt text extracted.");
+        };
+        reader.readAsText(file);
+      } else {
+        alert("Formato de archivo no soportado para extracción de texto. Prueba con PDF, Word, Imagen o TXT.");
       }
     } catch (error) {
       console.error("Error extrayendo texto:", error);
@@ -131,55 +189,80 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   };
 
   const handleGenerate = async () => {
-    if (view === 'template') {
-      setIsGenerating(true);
-      
-      // Simular guardado
-      if (user) {
-        await addDoc(collection(db, 'clinical_documents'), {
-          title: `${formData.type} - ${formData.patientName}`,
-          subtitle: `Generado hoy • Plantilla: ${formData.type}`,
-          type: 'template',
-          doctorId: user.uid,
-          patientName: formData.patientName,
-          createdAt: serverTimestamp(),
-          content: formData.diagnosis,
-          templateType: formData.type
-        });
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setIsGenerating(false);
-      return;
-    }
-
-    if (!aiPrompt.trim() && !extractedText) return;
+    console.log("DocumentGenerator: Starting generation...", { view });
     setIsGenerating(true);
     
     try {
-      const chat = createChat();
-      let systemInstruction = `Eres un asistente médico experto. Genera solo el CUERPO del documento. No incluyas membretes ni saludos iniciales.`;
-      let fullPrompt = systemInstruction + `\n\nInstrucciones: "${aiPrompt}"`;
-      if (extractedText) fullPrompt += `\n\nTexto base:\n${extractedText}`;
+      if (view === 'template') {
+        // ... (resto del código de plantilla idéntico)
+        if (user) {
+          console.log("DocumentGenerator: Saving template document...");
+          await addDoc(collection(db, 'clinical_documents'), {
+            title: `${formData.type} - ${formData.patientName}`,
+            subtitle: `Generado hoy • Plantilla: ${formData.type}`,
+            type: 'template',
+            doctorUid: user.uid,
+            patientName: formData.patientName,
+            createdAt: serverTimestamp(),
+            content: formData.diagnosis,
+            templateType: formData.type
+          });
+          console.log("DocumentGenerator: Template document saved.");
+        }
 
-      const result = await chat.sendMessage(fullPrompt);
+        await new Promise(resolve => setTimeout(resolve, 800));
+        alert("¡Documento generado y guardado con éxito!");
+        setIsGenerating(false);
+        return;
+      }
+
+      if (!aiPrompt.trim() && !extractedText) {
+        alert("Por favor ingresa una descripción o sube un archivo.");
+        setIsGenerating(false);
+        return;
+      }
+      
+      console.log("DocumentGenerator: Calling AI...");
+      const chat = createChat();
+      
+      // Prompt especializado para GENERAR DOCUMENTOS, no para chatear
+      const documentContext = extractedText ? `DOCUMENTO DE REFERENCIA SUBIDO (Extraído):\n"""\n${extractedText}\n"""\n\n` : "";
+      
+      const promptWithContext = `Eres un transcriptor y redactor médico experto. Tu tarea es generar el CUERPO de un documento clínico basado en las instrucciones del doctor.
+ 
+${documentContext}
+INSTRUCCIÓN DEL DOCTOR: "${aiPrompt}"
+ 
+REGLAS CRÍTICAS:
+1. Responde ÚNICAMENTE con el contenido del documento.
+2. NO incluyas saludos, introducciones ("Aquí tienes...", "Entendido...") ni despedidas.
+3. Si el doctor pide cambiar datos (como su nombre o el del paciente), cámbialos en el texto final.
+4. Mantén un tono profesional y clínico.
+ 
+CONTENIDO DEL DOCUMENTO:`;
+
+      const result = await chat.sendMessage(promptWithContext);
       const text = await result.response.then(r => r.text());
       const cleanText = text.trim();
       setGeneratedDocContent(cleanText);
+      console.log("DocumentGenerator: AI response received.");
 
       // Guardar documento generado por IA
       if (user) {
+        console.log("DocumentGenerator: Saving AI document...");
         await addDoc(collection(db, 'clinical_documents'), {
           title: `Documento Personalizado`,
           subtitle: `Generado hoy • Asistente IA`,
           type: 'ai',
-          doctorId: user.uid,
+          doctorUid: user.uid,
           createdAt: serverTimestamp(),
           content: cleanText
         });
+        console.log("DocumentGenerator: AI document saved.");
       }
-    } catch (error) {
-      console.error("Error:", error);
+    } catch (error: any) {
+      console.error("DocumentGenerator Error:", error);
+      alert(`Error generando documento: ${error.message || "Error desconocido"}`);
     } finally {
       setIsGenerating(false);
     }
@@ -397,13 +480,18 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
               <div className="flex-1 flex overflow-hidden">
                 {/* Template Config Left */}
                 <div className="w-[480px] bg-white border-r border-surface-container-high overflow-y-auto no-scrollbar p-12 space-y-12">
-                  <div className="space-y-4">
-                    <button onClick={() => setView('selection')} className="flex items-center gap-2 text-primary/40 mb-2 hover:text-primary transition-colors group">
-                      <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Panel de control</span>
+                  <div className="space-y-6">
+                    <button 
+                      onClick={() => setView('selection')} 
+                      className="flex items-center gap-3 bg-primary text-white px-6 py-3 rounded-2xl hover:bg-primary-container transition-all group shadow-lg shadow-primary/20"
+                    >
+                      <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                      <span className="text-xs font-black uppercase tracking-widest">Volver al panel</span>
                     </button>
-                    <h2 className="text-4xl font-black text-high-contrast tracking-tight">Configurar Plantilla</h2>
-                    <p className="text-sm font-medium text-high-contrast/40 leading-relaxed">Complete los campos para actualizar la vista previa en tiempo real.</p>
+                    <div className="space-y-4 pt-4">
+                      <h2 className="text-4xl font-black text-high-contrast tracking-tight">Configurar Plantilla</h2>
+                      <p className="text-sm font-medium text-high-contrast/40 leading-relaxed">Complete los campos para actualizar la vista previa en tiempo real.</p>
+                    </div>
                   </div>
 
                   <div className="space-y-10">
@@ -570,13 +658,18 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                 {/* AI Assistant Left */}
                 <div className="w-[480px] bg-white border-r border-surface-container-high overflow-y-auto no-scrollbar p-12 flex flex-col">
                   <div className="space-y-10 flex-1">
-                    <div className="space-y-4">
-                      <button onClick={() => setView('selection')} className="flex items-center gap-2 text-primary/40 mb-2 hover:text-primary transition-colors group">
-                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Volver</span>
+                    <div className="space-y-6">
+                      <button 
+                        onClick={() => setView('selection')} 
+                        className="flex items-center gap-3 bg-primary text-white px-6 py-3 rounded-2xl hover:bg-primary-container transition-all group shadow-lg shadow-primary/20 w-fit"
+                      >
+                        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                        <span className="text-xs font-black uppercase tracking-widest">Volver al panel</span>
                       </button>
-                      <h2 className="text-xs font-black text-primary uppercase tracking-[0.4em]">EDITOR INTELIGENTE</h2>
-                      <p className="text-2xl font-black text-high-contrast tracking-tight">¿Qué documento crearemos hoy?</p>
+                      <div className="pt-4">
+                        <h2 className="text-xs font-black text-primary uppercase tracking-[0.4em]">EDITOR INTELIGENTE</h2>
+                        <p className="text-2xl font-black text-high-contrast tracking-tight">¿Qué documento crearemos hoy?</p>
+                      </div>
                     </div>
 
                     <div className="space-y-8">
@@ -587,8 +680,12 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                           value={aiPrompt}
                           onChange={(e) => setAiPrompt(e.target.value)}
                         />
-                        <button className="absolute bottom-8 right-8 w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:bg-primary-container transition-all shadow-xl shadow-primary/30 group-hover:scale-105">
-                          <ArrowLeft className="w-6 h-6 rotate-[90deg]" />
+                        <button 
+                          onClick={handleGenerate}
+                          disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
+                          className="absolute bottom-8 right-8 w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:bg-primary-container transition-all shadow-xl shadow-primary/30 group-hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                        >
+                          {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowLeft className="w-6 h-6 rotate-[90deg]" />}
                         </button>
                       </div>
 
@@ -597,7 +694,9 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
-                        <div className="w-16 h-16 bg-white rounded-[1.5rem] flex items-center justify-center text-primary shadow-sm group-hover:scale-110 transition-transform border border-surface-container-high"><FileText className="w-8 h-8" /></div>
+                        <div className="w-16 h-16 bg-white rounded-[1.5rem] flex items-center justify-center text-primary shadow-sm group-hover:scale-110 transition-transform border border-surface-container-high">
+                          {isExtracting ? <Loader2 className="w-8 h-8 animate-spin" /> : <FileText className="w-8 h-8" />}
+                        </div>
                         <div className="space-y-2">
                           <p className="text-base font-black text-high-contrast">{uploadedFile ? uploadedFile.name : "Subir PDF, DOCX o Imágenes"}</p>
                           <p className="text-[11px] font-medium text-high-contrast/30 uppercase tracking-widest max-w-[250px]">Arrastra y suelta tus archivos aquí para referencia clínica</p>
@@ -608,12 +707,16 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                         <p className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Acciones rápidas</p>
                         <div className="grid grid-cols-2 gap-4">
                           {[
-                            { label: "Modificar este documento", icon: <FileEdit className="w-4 h-4" /> },
-                            { label: "Cambiar nombre del paciente", icon: <UserPlus className="w-4 h-4" /> },
-                            { label: "Hacer más formal", icon: <Gavel className="w-4 h-4" /> },
-                            { label: "Convertir en plantilla", icon: <Copy className="w-4 h-4" /> }
+                            { label: "Modificar este documento", icon: <FileEdit className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nModifica el documento anterior para...") },
+                            { label: "Cambiar nombre del paciente", icon: <UserPlus className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nCambia el nombre del paciente a: ") },
+                            { label: "Hacer más formal", icon: <Gavel className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nRedacta el documento con un tono más formal y técnico.") },
+                            { label: "Limpiar editor", icon: <X className="w-4 h-4" />, action: () => { setAiPrompt(''); setExtractedText(''); setUploadedFile(null); setGeneratedDocContent(''); } }
                           ].map((action, i) => (
-                            <button key={i} className="flex items-center gap-4 p-5 bg-white border border-surface-container-high rounded-2xl text-left hover:border-primary/30 hover:shadow-md transition-all group">
+                            <button 
+                              key={i} 
+                              onClick={action.action}
+                              className="flex items-center gap-4 p-5 bg-white border border-surface-container-high rounded-2xl text-left hover:border-primary/30 hover:shadow-md transition-all group"
+                            >
                               <div className="text-primary group-hover:scale-110 transition-transform">{action.icon}</div>
                               <span className="text-xs font-bold text-high-contrast/70">{action.label}</span>
                             </button>
@@ -626,61 +729,117 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                   <div className="pt-12">
                     <button 
                       onClick={handleGenerate}
-                      className="w-full h-18 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/30 py-5"
+                      disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
+                      className="w-full h-18 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/30 py-5 disabled:opacity-50"
                     >
-                      <Sparkles className="w-6 h-6" />
-                      Analizar con IA
+                      {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
+                      {isGenerating ? "GENERANDO..." : "ANALIZAR CON IA"}
                     </button>
                   </div>
                 </div>
 
                 {/* AI Preview Right */}
-                <div className="flex-1 bg-[#EEF2FF] overflow-hidden flex flex-col items-center justify-center p-20 relative">
-                  <div className="relative group">
-                    <div className="absolute -inset-10 bg-primary/10 blur-[100px] opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-                    <motion.div 
-                      initial={{ y: 30, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      className="w-[500px] aspect-[1/1.4] bg-white rounded-[2.5rem] shadow-[0_50px_100px_rgba(0,0,0,0.08)] relative overflow-hidden p-16 space-y-10"
-                    >
-                      <div className="w-24 h-5 bg-surface-low rounded-full" />
-                      <div className="space-y-5">
-                        <div className="w-full h-4 bg-surface-low rounded-full" />
-                        <div className="w-full h-4 bg-surface-low rounded-full" />
-                        <div className="w-2/3 h-4 bg-surface-low rounded-full" />
-                      </div>
-                      <div className="w-full aspect-[4/3] bg-surface-low rounded-3xl" />
-                      <div className="space-y-4">
-                        <div className="w-full h-4 bg-surface-low rounded-full" />
-                        <div className="w-4/5 h-4 bg-surface-low rounded-full" />
-                      </div>
-                      
-                      <div className="absolute bottom-12 right-12 w-20 h-20 bg-white border border-surface-container-high rounded-3xl shadow-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform duration-500">
-                        <Sparkles className="w-10 h-10" />
-                      </div>
-                    </motion.div>
-                  </div>
+                <div className="flex-1 bg-[#EEF2FF] overflow-y-auto no-scrollbar p-16 relative flex flex-col items-center">
+                  <AnimatePresence mode="wait">
+                    {generatedDocContent ? (
+                      <motion.div 
+                        key="document"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="max-w-[800px] w-full space-y-8"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-primary">
+                            <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                            <span className="text-[10px] font-black uppercase tracking-widest">Documento Generado por IA</span>
+                          </div>
+                          <div className="flex gap-4">
+                            <button onClick={handleExportPDF} disabled={isExporting} className="h-11 px-5 bg-white border border-surface-container-high rounded-xl text-xs font-black flex items-center gap-2 hover:shadow-lg transition-all">
+                              <FileDown className="w-4 h-4 text-primary" /> PDF
+                            </button>
+                          </div>
+                        </div>
 
-                  <div className="mt-16 text-center space-y-5">
-                    <h3 className="text-3xl font-black text-high-contrast tracking-tight">Tu documento cobra vida aquí</h3>
-                    <p className="text-high-contrast/40 font-medium max-w-sm leading-relaxed text-lg">
-                      La vista previa aparecerá cuando la IA genere el documento basándose en tus instrucciones o archivos subidos.
-                    </p>
-                  </div>
+                        <div className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-20 relative flex flex-col min-h-[1100px] h-auto w-full overflow-visible" ref={documentRef}>
+                           {/* Document Header (Reusing Template Header Style) */}
+                           <div className="flex justify-between items-start border-b-2 border-primary/5 pb-10 mb-14 shrink-0">
+                             <div className="flex items-center gap-8">
+                                <div className="w-16 h-16 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-center text-primary shadow-sm">
+                                   <BriefcaseMedical className="w-8 h-8" />
+                                </div>
+                                <div>
+                                  <h2 className="text-xl font-black text-primary leading-tight">Dra. {profile?.displayName || 'Isabel Beato'}</h2>
+                                  <p className="text-[10px] font-bold text-high-contrast/50 uppercase tracking-widest mt-1">{profile?.specialty || 'Especialista'}</p>
+                                </div>
+                             </div>
+                             <div className="text-right">
+                                <p className="text-[10px] font-black text-high-contrast/80 uppercase tracking-widest">MediFácil Hospital Arcos</p>
+                                <p className="text-[8px] font-medium text-high-contrast/40 uppercase">{new Date().toLocaleDateString('es-DO', { dateStyle: 'long' })}</p>
+                             </div>
+                          </div>
 
-                  <div className="mt-16 flex items-center gap-6">
-                    <div className="flex -space-x-3">
-                       {['REC', 'INV', 'LAB'].map((t, i) => (
-                         <div key={i} className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-[10px] font-black text-white border-[6px] border-[#EEF2FF] uppercase tracking-tighter shadow-sm">{t}</div>
-                       ))}
-                    </div>
-                    <p className="text-[11px] font-black text-high-contrast/30 uppercase tracking-[0.2em]">Soporta múltiples formatos médicos</p>
-                  </div>
+                          <div className="flex-1 whitespace-pre-wrap text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
+                            {generatedDocContent}
+                          </div>
 
-                  <div className="absolute bottom-12 left-1/2 -translate-x-1/2 px-8 py-4 bg-white/90 backdrop-blur-xl border border-white rounded-full shadow-xl flex items-center gap-4">
-                    <div className="w-2.5 h-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_10px_rgba(25,25,112,0.5)]" />
-                    <span className="text-xs font-black text-primary uppercase tracking-[0.2em]">IA optimizada para el modelo de salud local</span>
-                  </div>
+                          <div className="mt-auto pt-10 border-t border-surface-container-high flex flex-col items-center shrink-0">
+                            <div className="w-48 h-[1px] bg-high-contrast/20 mb-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-high-contrast/40">Firma Autorizada</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div 
+                        key="placeholder"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex flex-col items-center justify-center"
+                      >
+                        <div className="relative group">
+                          <div className="absolute -inset-10 bg-primary/10 blur-[100px] opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                          <div className="w-[500px] aspect-[1/1.4] bg-white rounded-[2.5rem] shadow-[0_50px_100px_rgba(0,0,0,0.08)] relative overflow-hidden p-16 space-y-10">
+                            <div className="w-24 h-5 bg-surface-low rounded-full" />
+                            <div className="space-y-5">
+                              <div className="w-full h-4 bg-surface-low rounded-full" />
+                              <div className="w-full h-4 bg-surface-low rounded-full" />
+                              <div className="w-2/3 h-4 bg-surface-low rounded-full" />
+                            </div>
+                            <div className="w-full aspect-[4/3] bg-surface-low rounded-3xl" />
+                            <div className="space-y-4">
+                              <div className="w-full h-4 bg-surface-low rounded-full" />
+                              <div className="w-4/5 h-4 bg-surface-low rounded-full" />
+                            </div>
+                            
+                            <div className="absolute bottom-12 right-12 w-20 h-20 bg-white border border-surface-container-high rounded-3xl shadow-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform duration-500">
+                              <Sparkles className="w-10 h-10" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-16 text-center space-y-5">
+                          <h3 className="text-3xl font-black text-high-contrast tracking-tight">Tu documento cobra vida aquí</h3>
+                          <p className="text-high-contrast/40 font-medium max-w-sm leading-relaxed text-lg">
+                            La vista previa aparecerá cuando la IA genere el documento basándose en tus instrucciones o archivos subidos.
+                          </p>
+                        </div>
+
+                        <div className="mt-16 flex items-center gap-6">
+                          <div className="flex -space-x-3">
+                             {['REC', 'INV', 'LAB'].map((t, i) => (
+                               <div key={i} className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-[10px] font-black text-white border-[6px] border-[#EEF2FF] uppercase tracking-tighter shadow-sm">{t}</div>
+                             ))}
+                          </div>
+                          <p className="text-[11px] font-black text-high-contrast/30 uppercase tracking-[0.2em]">Soporta múltiples formatos médicos</p>
+                        </div>
+
+                        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 px-8 py-4 bg-white/90 backdrop-blur-xl border border-white rounded-full shadow-xl flex items-center gap-4">
+                          <div className="w-2.5 h-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_10px_rgba(25,25,112,0.5)]" />
+                          <span className="text-xs font-black text-primary uppercase tracking-[0.2em]">IA optimizada para el modelo de salud local</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             )}
