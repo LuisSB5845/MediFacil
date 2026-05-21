@@ -22,7 +22,6 @@
     "helmet": "^8.0.0",
     "stripe": "^22.0.0",
     "winston": "^3.19.0",
-    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

@@ -15,7 +15,10 @@ import admin from 'firebase-admin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+}
 
 // Registro de carga de variables de entorno para depuración (Sin revelar secretos)
 if (!process.env.AI_GATEWAY_API_KEY) {

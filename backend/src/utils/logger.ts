@@ -1,10 +1,4 @@
 import winston from 'winston';
-import 'winston-daily-rotate-file';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Definir niveles de log
 const levels = {
@@ -33,7 +27,7 @@ const format = winston.format.combine(
   winston.format.splat()
 );
 
-// Transportes: Consola siempre, Archivos solo en desarrollo
+// Transportes: Consola siempre, sin rotación de archivos en producción
 const transports: winston.transport[] = [
   new winston.transports.Console({
     format: winston.format.combine(
@@ -44,39 +38,6 @@ const transports: winston.transport[] = [
     ),
   }),
 ];
-
-// En Vercel/Producción no podemos escribir en archivos locales.
-// Solo habilitamos la rotación de archivos si no estamos en producción.
-if (process.env.NODE_ENV !== 'production') {
-  transports.push(
-    new winston.transports.DailyRotateFile({
-      filename: path.join(__dirname, '../../logs/app-%DATE%.log'),
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      level: 'info',
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-      )
-    })
-  );
-  transports.push(
-    new winston.transports.DailyRotateFile({
-      filename: path.join(__dirname, '../../logs/error-%DATE%.log'),
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '30d',
-      level: 'error',
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-      )
-    })
-  );
-}
 
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
