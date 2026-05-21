@@ -33,9 +33,20 @@ if (process.env.AI_MODEL_NAME) {
 }
 
 // -- INICIALIZACIÓN DE STRIPE --
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-02-11' as any,
-});
+let stripe: Stripe | null = null;
+try {
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (stripeKey) {
+    stripe = new Stripe(stripeKey, {
+      apiVersion: '2025-02-11' as any,
+    });
+    logger.info("✅ Stripe SDK inicializado correctamente.");
+  } else {
+    logger.warn("⚠️ STRIPE_SECRET_KEY no provista. Los endpoints de pagos no estarán disponibles.");
+  }
+} catch (error: any) {
+  logger.error("❌ Error inicializando Stripe SDK: " + error.message);
+}
 
 let db: admin.firestore.Firestore | null = null;
 
@@ -278,6 +289,11 @@ app.get('/api/health', (req, res) => {
 app.post('/api/stripe/create-checkout-session', async (req, res) => {
   const { priceId, userId, userEmail } = req.body;
 
+  if (!stripe) {
+    logger.warn('Intento de crear sesión de checkout sin Stripe inicializado.');
+    return res.status(503).json({ error: 'El servicio de pagos no está disponible en este momento.' });
+  }
+
   if (!priceId || !userId) {
     return res.status(400).json({ error: 'Faltan parámetros: priceId o userId' });
   }
@@ -304,6 +320,11 @@ app.post('/api/stripe/create-checkout-session', async (req, res) => {
 app.post('/api/stripe/create-portal-session', async (req, res) => {
   const { customerId } = req.body;
 
+  if (!stripe) {
+    logger.warn('Intento de crear sesión de portal sin Stripe inicializado.');
+    return res.status(503).json({ error: 'El servicio de pagos no está disponible en este momento.' });
+  }
+
   if (!customerId) {
     return res.status(400).json({ error: 'Falta customerId' });
   }
@@ -326,6 +347,11 @@ app.post('/api/stripe/create-portal-session', async (req, res) => {
 app.post('/api/webhook/stripe', async (req, res) => {
   const sig = req.headers['stripe-signature'] as string;
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripe) {
+    logger.warn('Recibido webhook de Stripe pero el servicio de pagos no está inicializado.');
+    return res.status(503).send('Stripe service not initialized');
+  }
 
   let event;
 
