@@ -58,14 +58,25 @@ try {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
+      db = admin.firestore();
+      logger.info("✅ Firebase Admin inicializado correctamente con Cuenta de Servicio.");
     } else {
-      admin.initializeApp();
+      // Fallback para permitir verificar tokens de usuario en Vercel sin Cuenta de Servicio
+      const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "medifacil-5de46";
+      admin.initializeApp({
+        projectId: projectId
+      });
+      logger.warn(`⚠️ Firebase Admin inicializado sin Cuenta de Servicio. Usando projectId fallback: ${projectId}`);
+    }
+  } else {
+    try {
+      db = admin.firestore();
+    } catch (e) {
+      // Ignorar error si no hay credenciales para Firestore
     }
   }
-  db = admin.firestore();
-  logger.info("✅ Firebase Admin inicializado correctamente.");
 } catch (error: any) {
-  logger.warn("⚠️ Firebase Admin no pudo inicializarse (usando entorno local o sin credenciales): " + error.message);
+  logger.error("❌ Error inicializando Firebase Admin: " + error.message);
 }
 
 const app = express();
@@ -207,10 +218,7 @@ const AI_LIMITS: Record<string, number> = {
 
 const checkAIQuota = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (!db) {
-    logger.warn("Saltando checkAIQuota porque la base de datos no está disponible");
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(503).json({ error: 'Servicio de base de datos no disponible temporalmente.' });
-    }
+    logger.warn("Saltando checkAIQuota porque la base de datos no está disponible (falta cuenta de servicio)");
     return next();
   }
 
