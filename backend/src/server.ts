@@ -34,22 +34,25 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2025-02-11' as any,
 });
 
+let db: admin.firestore.Firestore | null = null;
+
 // -- INICIALIZACIÓN DE FIREBASE ADMIN --
 try {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  } else {
-    admin.initializeApp();
+  if (admin.apps.length === 0) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+    } else {
+      admin.initializeApp();
+    }
   }
+  db = admin.firestore();
   logger.info("✅ Firebase Admin inicializado correctamente.");
 } catch (error: any) {
   logger.warn("⚠️ Firebase Admin no pudo inicializarse (usando entorno local o sin credenciales): " + error.message);
 }
-
-const db = admin.firestore();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -186,6 +189,14 @@ const AI_LIMITS: Record<string, number> = {
 };
 
 const checkAIQuota = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!db) {
+    logger.warn("Saltando checkAIQuota porque la base de datos no está disponible");
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ error: 'Servicio de base de datos no disponible temporalmente.' });
+    }
+    return next();
+  }
+
   if (!process.env.FIREBASE_SERVICE_ACCOUNT && process.env.NODE_ENV !== 'production') {
     logger.warn("Saltando checkAIQuota en modo local por falta de credenciales");
     return next();
@@ -325,6 +336,9 @@ app.post('/api/webhook/stripe', async (req, res) => {
   logger.info(`🔔 Stripe Event Received: ${event.type}`);
 
   try {
+    if (!db) {
+      throw new Error("Base de datos no disponible para procesar webhooks de Stripe");
+    }
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
@@ -407,6 +421,11 @@ const buildDoctorContext = async (userId: string, userMessage: string): Promise<
   const lowerMsg = userMessage.toLowerCase();
   const contextParts: string[] = [];
 
+  if (!db) {
+    logger.warn('Advertencia: base de datos no inicializada, buildDoctorContext retornará vacío.');
+    return '';
+  }
+
   try {
     // Siempre cargar perfil básico del doctor
     const userDoc = await db.collection('users').doc(userId).get();
@@ -459,16 +478,16 @@ ${patientList}`);
       lowerMsg.includes('ultima');
 
     if (askingAboutConsultations) {
-      const consultSnap = await db.collection('consultations')
+      const consultSnap = await db.collectionGroup('consultations')
         .where('doctorUid', '==', userId)
-        .orderBy('createdAt', 'desc')
+        .orderBy('date', 'desc')
         .limit(10)
         .get();
 
       if (!consultSnap.empty) {
         const consultList = consultSnap.docs.map(doc => {
           const c = doc.data();
-          return `  - Paciente: ${c.patientName || 'N/D'} | Diagnóstico: ${c.diagnosis || 'N/D'} | Fecha: ${c.createdAt?.toDate?.()?.toLocaleDateString('es-DO') || 'N/D'}`;
+          return `  - Paciente: ${c.patientName || 'N/D'} | Diagnóstico: ${c.diagnosis || 'N/D'} | Fecha: ${c.date?.toDate?.()?.toLocaleDateString('es-DO') || 'N/D'}`;
         }).join('\n');
 
         contextParts.push(`CONSULTAS RECIENTES (últimas ${consultSnap.size}):
@@ -672,6 +691,18 @@ app.get('/api/ai/usage', authenticateUser, async (req, res) => {
   const user = (req as any).user;
   const userId = user.uid;
   const today = new Date().toISOString().split('T')[0];
+
+  if (!db) {
+    logger.warn("Solicitud de /api/ai/usage con base de datos no disponible.");
+    return res.status(200).json({
+      plan: 'free',
+      used: 0,
+      limit: AI_LIMITS.free,
+      remaining: AI_LIMITS.free,
+      resetAt: 'midnight UTC',
+      warning: 'Base de datos fuera de línea, mostrando cuota gratuita por defecto.'
+    });
+  }
 
   try {
     const userDoc = await db.collection('users').doc(userId).get();

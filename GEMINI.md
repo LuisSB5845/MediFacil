@@ -1,6 +1,13 @@
-# 🏥 MediFácil — Contexto del Proyecto (GEMINI.md)
+# 🏥 MediFácil — Contexto del Proyecto (GEMINI.md / ANTIGRAVITY)
 
-Este archivo proporciona una visión técnica y operativa de **MediFácil** para interacciones con agentes de IA.
+Este archivo proporciona una visión técnica y operativa de **MediFácil** para interacciones con agentes de IA (Optimizado para **Antigravity CLI**).
+
+---
+
+## 🚀 Migración a Antigravity
+Este proyecto ha sido migrado de Gemini CLI a **Antigravity CLI**.
+- **Comando principal**: Usar `agy` en lugar de `gemini`.
+- **Configuración**: El archivo `GEMINI.md` sigue siendo la fuente de verdad para el contexto del agente, compatible con el motor de Antigravity.
 
 ---
 
