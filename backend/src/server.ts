@@ -190,7 +190,10 @@ const authenticateUser = async (req: express.Request, res: express.Response, nex
     next();
   } catch (error: any) {
     logger.error('Error verificando token de Firebase:', error.message);
-    return res.status(401).json({ error: 'Token inválido o expirado.' });
+    return res.status(401).json({ 
+      error: 'Token inválido o expirado.',
+      details: error.message
+    });
   }
 };
 
