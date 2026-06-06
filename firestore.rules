@@ -124,6 +124,11 @@ service cloud.firestore {
       }
     }
 
+    // User Stats Tracking (consultations count)
+    match /stats/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
     // AI Usage Tracking
     match /ai_usage/{userId} {
       allow read: if isOwner(userId) || isAdmin();

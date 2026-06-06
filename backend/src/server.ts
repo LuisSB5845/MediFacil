@@ -84,11 +84,23 @@ const PORT = process.env.PORT || 4000;
 
 // ── CONFIGURACIÓN DEL MODELO DE IA ──────────────────────────────────────────
 // Para cambiar de modelo: solo modificar AI_MODEL_NAME en .env
-// Ejemplos: gemma-4-26b-a4b-it | gemma-4-31b-it | gemini-2.0-flash | gemini-2.5-flash
+// Ejemplos: gemma-4-26b-a4b-it | gemma-4-31b-it | gemini-2.5-flash
+let aiModelName = process.env.AI_MODEL_NAME || "gemma-4-26b-a4b-it";
+
+// Si el modelo es de Zhipu (zai/), que requiere AI Gateway con tarjeta de crédito en Vercel,
+// y no es compatible directamente con la API de Google, forzamos gemma-4-26b-a4b-it para resiliencia y cumplir la preferencia del usuario.
+if (aiModelName.startsWith("zai/")) {
+  logger.warn(`⚠️ El modelo '${aiModelName}' requiere AI Gateway / Tarjeta en Vercel. Forzando '${aiModelName}' a 'gemma-4-26b-a4b-it' para resiliencia.`);
+  aiModelName = "gemma-4-26b-a4b-it";
+}
+
+// Preferir la API Key nativa de Google (GEMINI_API_KEY) sobre la de Vercel AI Gateway (AI_GATEWAY_API_KEY)
+// para evitar llamadas directas fallidas o bloqueos de facturación en Vercel.
+const apiKey = process.env.GEMINI_API_KEY || process.env.AI_GATEWAY_API_KEY || "";
+
 const google = createGoogleGenerativeAI({
-  apiKey: process.env.AI_GATEWAY_API_KEY || process.env.GEMINI_API_KEY || "",
+  apiKey: apiKey,
 });
-const aiModelName = process.env.AI_MODEL_NAME || "gemma-4-26b-a4b-it";
 const model = google(aiModelName);
 logger.info(`🤖 Modelo de IA activo: ${aiModelName}`);
 // ────────────────────────────────────────────────────────────────────────────
@@ -254,8 +266,8 @@ const checkAIQuota = async (req: express.Request, res: express.Response, next: e
       });
     }
 
-    // Incrementar contador antes de procesar (previene race conditions)
-    await usageRef.set({ [today]: todayCount + 1 }, { merge: true });
+    // Incrementar contador usando operación atómica (previene race conditions reales)
+    await usageRef.set({ [today]: admin.firestore.FieldValue.increment(1) }, { merge: true });
 
     // Exponer datos de quota en la request para uso posterior
     (req as any).aiQuota = { plan, used: todayCount + 1, limit };

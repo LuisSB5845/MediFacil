@@ -12,3 +12,5 @@ backend/logs/
 firebase-applet-config.json
 firebase-blueprint.json
 .firebase/
+
+.vercel
