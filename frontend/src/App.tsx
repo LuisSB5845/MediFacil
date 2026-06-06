@@ -25,7 +25,9 @@ import {
   updateDoc,
   serverTimestamp,
   orderBy,
-  limit
+  limit,
+  increment,
+  runTransaction
 } from 'firebase/firestore';
 import { 
   auth, 
@@ -2082,34 +2084,29 @@ export default function App() {
     }
   }, [user]);
 
-  // Fetch all consultations for dashboard stats
-  const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
+  // Dashboard Stats: Escucha de documento ligero en vez de descarga masiva
+  const [totalConsultations, setTotalConsultations] = useState(0);
+  const [consultationsToday, setConsultationsToday] = useState(0);
 
   useEffect(() => {
     if (user) {
-      const q = query(
-        collectionGroup(db, 'consultations'),
-        where('doctorUid', '==', user.uid),
-        orderBy('date', 'desc')
-      );
-      return onSnapshot(q, (snapshot) => {
-        setAllConsultations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consultation)));
+      const statsRef = doc(db, 'stats', user.uid);
+      return onSnapshot(statsRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const todayStr = new Date().toISOString().split('T')[0];
+          setTotalConsultations(data.total || 0);
+          // Reinicia visualmente el contador diario si el documento tiene fecha vieja
+          setConsultationsToday(data.date === todayStr ? (data.today || 0) : 0);
+        } else {
+          setTotalConsultations(0);
+          setConsultationsToday(0);
+        }
       }, (error) => {
-        console.error('Error fetching consultations:', error);
+        console.error('Error fetching stats:', error);
       });
     }
   }, [user]);
-
-  // Calculate stats for dashboard
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const consultationsToday = allConsultations.filter(c => {
-    const cDate = new Date(c.date?.toDate?.() || c.date);
-    cDate.setHours(0, 0, 0, 0);
-    return cDate.getTime() === today.getTime();
-  }).length;
-
-  const totalConsultations = allConsultations.length;
 
   const handleLogin = async () => {
     try {
@@ -2195,6 +2192,22 @@ export default function App() {
         patientId: selectedPatient.id,
         date: serverTimestamp()
       });
+      
+      // Actualización atómica de estadísticas (Evita N+1 y descargas masivas)
+      const todayStr = new Date().toISOString().split('T')[0];
+      const statsRef = doc(db, 'stats', user.uid);
+      const statsSnap = await getDoc(statsRef);
+      if (!statsSnap.exists()) {
+        await setDoc(statsRef, { total: 1, today: 1, date: todayStr });
+      } else {
+        const data = statsSnap.data();
+        if (data.date !== todayStr) {
+          // Es un nuevo día, reseteamos el contador de hoy
+          await updateDoc(statsRef, { total: increment(1), today: 1, date: todayStr });
+        } else {
+          await updateDoc(statsRef, { total: increment(1), today: increment(1) });
+        }
+      }
       
       // Increment usage stats
       await incrementConsultationUsage(user.uid, profile.consultationsThisMonth || 0);

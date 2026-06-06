@@ -68,14 +68,6 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const chatList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Chat));
       setChats(chatList);
-      
-      // If no active chat and there are chats, pick the first one
-      setActiveChatId(current => {
-        if (!current && chatList.length > 0) {
-          return chatList[0].id;
-        }
-        return current;
-      });
     });
 
     return () => unsubscribe();
@@ -220,7 +212,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
           >
             <div className="p-6 space-y-4">
               <button 
-                onClick={() => createNewChat()}
+                onClick={() => setActiveChatId(null)}
                 className="w-full h-12 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary-container transition-all shadow-lg shadow-primary/20"
               >
                 <Plus className="w-5 h-5" />
