@@ -27,15 +27,20 @@ const format = winston.format.combine(
   winston.format.splat()
 );
 
-// Transportes: Consola siempre, sin rotación de archivos en producción
+// Transportes: Consola colorizada para desarrollo, JSON estructurado para producción
 const transports: winston.transport[] = [
   new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize({ all: true }),
-      winston.format.printf(
-        (info) => `${info.timestamp} ${info.level}: ${info.message}`
-      )
-    ),
+    format: process.env.NODE_ENV === 'production'
+      ? winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.json()
+        )
+      : winston.format.combine(
+          winston.format.colorize({ all: true }),
+          winston.format.printf(
+            (info) => `${info.timestamp} ${info.level}: ${info.message}${info.stack ? '\n' + info.stack : ''}`
+          )
+        ),
   }),
 ];
 
