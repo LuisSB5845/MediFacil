@@ -14,3 +14,14 @@ firebase-blueprint.json
 .firebase/
 
 .vercel
+
+# Secretos y backups
+*-firebase-adminsdk-*.json
+*.rar
+
+# Dev test scripts
+backend/src/test_*.ts
+
+# Admin documentation and private scripts
+HOWTOADD_ADMINS
+backend/setAdmin.ts
