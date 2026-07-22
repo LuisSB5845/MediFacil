@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
@@ -943,1005 +944,20 @@ const Header = ({ title, subtitle, search, onSearchChange, setActiveTab, onToggl
   );
 };
 
-const PatientsList = ({ 
-  patients, 
-  onSelectPatient, 
-  onAddPatient, 
-  onEditPatient, 
-  onDeletePatient, 
-  onStartConsultation, 
-  search, 
-  onSearchChange,
-  dateFilter,
-  onDateFilterChange
-}: { 
-  patients: Patient[]; 
-  onSelectPatient: (p: Patient) => void;
-  onAddPatient: () => void;
-  onEditPatient: (p: Patient) => void;
-  onDeletePatient: (id: string) => void;
-  onStartConsultation: (p: Patient) => void;
-  search: string;
-  onSearchChange: (s: string) => void;
-  dateFilter: 'today' | 'week' | 'month' | 'all';
-  onDateFilterChange: (f: 'today' | 'week' | 'month' | 'all') => void;
-}) => {
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-
-  const sortedPatients = useMemo(() => {
-    return [...patients].sort((a, b) => {
-      const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-      const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [patients]);
-
-  const filteredPatients = useMemo(() => {
-    let filtered = sortedPatients.filter(p => 
-      p.name.toLowerCase().includes(search.toLowerCase()) || 
-      p.id.toLowerCase().includes(search.toLowerCase())
-    );
-
-    if (dateFilter !== 'all') {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
-      filtered = filtered.filter(p => {
-        if (!p.createdAt) return false;
-        const createdAt = p.createdAt.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
-        
-        if (dateFilter === 'today') {
-          return createdAt >= today;
-        } else if (dateFilter === 'week') {
-          const weekAgo = new Date(today);
-          weekAgo.setDate(today.getDate() - 7);
-          return createdAt >= weekAgo;
-        } else if (dateFilter === 'month') {
-          const monthAgo = new Date(today);
-          monthAgo.setMonth(today.getMonth() - 1);
-          return createdAt >= monthAgo;
-        }
-        return true;
-      });
-    }
-
-    return filtered;
-  }, [patients, search, dateFilter]);
-
-  const filterLabels = {
-    today: 'Hoy',
-    week: 'Esta Semana',
-    month: 'Este Mes',
-    all: 'Todos'
-  };
-
-  const recentPatients = sortedPatients.slice(0, 6);
-
-  return (
-    <div className="p-4 md:p-10 space-y-8 md:space-y-12">
-      {/* Zone 1: Search and Add */}
-      <section>
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-6">
-          <div className="relative flex-grow">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface-variant w-5 h-5 md:w-6 md:h-6" />
-            <input 
-              className="w-full h-14 md:h-16 pl-14 md:pl-16 pr-6 rounded-2xl md:rounded-full bg-surface-container-low border-none focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all text-base md:text-lg font-medium placeholder:text-on-surface-variant/60" 
-              placeholder="Buscar por nombre o cédula..." 
-              type="text"
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-            />
-          </div>
-          <button 
-            onClick={onAddPatient}
-            className="h-14 md:h-16 px-8 sidebar-gradient text-white rounded-2xl md:rounded-full font-bold flex items-center justify-center gap-3 shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
-          >
-            <Plus className="w-6 h-6" />
-            <span>Agregar Paciente</span>
-          </button>
-        </div>
-      </section>
-
-      {/* Zone 2: Recent Patients */}
-      {recentPatients.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-6 md:mb-8">
-            <h3 className="text-lg md:text-xl font-bold tracking-tight text-[#191970]">Vistos recientemente</h3>
-            <div className="hidden sm:block h-[2px] flex-grow mx-8 bg-gradient-to-r from-outline-variant/20 to-transparent"></div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {recentPatients.map(patient => (
-              <div key={patient.id} className="group bg-surface-container-lowest rounded-xl p-5 shadow-[0px_10px_30px_rgba(25,25,112,0.04)] hover:shadow-xl transition-all border border-outline-variant/10 flex flex-col justify-between h-44 md:h-48">
-                <div className="flex items-start justify-between">
-                  <div className="flex gap-4">
-                    <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-primary/5 flex items-center justify-center text-primary font-bold text-lg md:text-xl border border-primary/10">
-                      {patient.name.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-[#191970] text-base md:text-lg group-hover:text-primary transition-colors line-clamp-1">{patient.name}</h4>
-                      <p className="text-[10px] md:text-xs font-bold text-outline-variant uppercase tracking-widest mt-0.5">{patient.age} años</p>
-                    </div>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => onStartConsultation(patient)}
-                  className="w-full h-10 md:h-12 rounded-lg bg-surface-container-low text-primary font-bold text-sm hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2 group/btn"
-                >
-                  <FileText className="w-4 h-4 md:w-5 md:h-5" />
-                  Nueva Consulta
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Zone 3: General List */}
-      <section className="mb-20">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 md:mb-8">
-          <h3 className="text-lg md:text-xl font-bold tracking-tight text-[#191970]">Lista General de Pacientes</h3>
-          <div className="flex items-center gap-2 relative w-full sm:w-auto">
-            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Filtrar:</span>
-            <button 
-              onClick={() => setShowFilterMenu(!showFilterMenu)}
-              className="flex-grow sm:flex-grow-0 px-4 py-1.5 rounded-full bg-white text-xs font-bold text-[#191970] border border-outline-variant/30 flex items-center justify-between sm:justify-start gap-2 hover:bg-surface-container-low transition-colors"
-            >
-              {filterLabels[dateFilter]} <ChevronDown className={cn("w-4 h-4 transition-transform", showFilterMenu && "rotate-180")} />
-            </button>
-
-            <AnimatePresence>
-              {showFilterMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowFilterMenu(false)} />
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-outline-variant/10 py-2 z-20"
-                  >
-                    {(['all', 'today', 'week', 'month'] as const).map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => {
-                          onDateFilterChange(f);
-                          setShowFilterMenu(false);
-                        }}
-                        className={cn(
-                          "w-full px-4 py-2 text-left text-xs font-bold transition-colors hover:bg-surface-container-low",
-                          dateFilter === f ? "text-primary bg-primary/5" : "text-on-surface-variant"
-                        )}
-                      >
-                        {filterLabels[f]}
-                      </button>
-                    ))}
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-        <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0px_10px_40px_rgba(25,25,112,0.03)] border border-outline-variant/10">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-left border-collapse">
-              <thead>
-              <tr className="bg-surface-container-low/50">
-                <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em]">Nombre del Paciente</th>
-                <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em]">Cédula / ID</th>
-                <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em]">Última Visita</th>
-                <th className="px-8 py-5 text-[10px] font-extrabold text-outline-variant uppercase tracking-[0.2em] text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/10">
-              {filteredPatients.map(patient => (
-                <tr key={patient.id} className="hover:bg-surface-container-low/30 transition-colors group">
-                  <td className="px-8 py-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-xs font-bold text-primary">
-                        {patient.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <span className="font-bold text-on-surface group-hover:text-primary">{patient.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6 text-sm font-semibold text-on-surface-variant">#{patient.id.slice(-8).toUpperCase()}</td>
-                  <td className="px-8 py-6 text-sm font-semibold text-on-surface">
-                    {patient.createdAt ? new Date(patient.createdAt?.toDate ? patient.createdAt.toDate() : patient.createdAt).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-100 translate-x-0 lg:opacity-0 lg:group-hover:opacity-100 transition-all duration-300 lg:translate-x-2 lg:group-hover:translate-x-0">
-                      <button 
-                        onClick={() => onSelectPatient(patient)}
-                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-primary/5 rounded-lg text-primary transition-all border border-transparent hover:border-primary/10" 
-                      >
-                        <History className="w-4 h-4" />
-                        <span className="font-bold uppercase tracking-widest text-[9px]">Historial</span>
-                      </button>
-                      <button 
-                        onClick={() => onEditPatient(patient)}
-                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-secondary/5 rounded-lg text-secondary transition-all border border-transparent hover:border-secondary/10" 
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        <span className="font-bold uppercase tracking-widest text-[9px]">Editar</span>
-                      </button>
-                      <button 
-                        onClick={() => onDeletePatient(patient.id)}
-                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-error/5 rounded-lg text-error transition-all border border-transparent hover:border-error/10" 
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span className="font-bold uppercase tracking-widest text-[9px]">Eliminar</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
-          </div>
-          {/* Pagination */}
-          <div className="px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface-container-low/20">
-            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Mostrando 1-{filteredPatients.length} de {patients.length} pacientes</p>
-            <div className="flex items-center gap-2">
-              <button className="w-10 h-10 flex items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-white transition-all">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button className="w-10 h-10 flex items-center justify-center rounded-lg bg-primary text-white font-bold shadow-md">1</button>
-              <button className="w-10 h-10 flex items-center justify-center rounded-lg border border-outline-variant/30 text-[#191970] font-bold hover:bg-white transition-all">2</button>
-              <button className="w-10 h-10 flex items-center justify-center rounded-lg border border-outline-variant/30 text-[#191970] font-bold hover:bg-white transition-all">3</button>
-              <button className="w-10 h-10 flex items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-white transition-all">
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-};
-
-const Dashboard = ({ patients, onSelectPatient, onAddPatient, onNewConsultation, onStartConsultation, search, onSearchChange, user, setActiveTab, consultationsToday, totalConsultations }: {
-  patients: Patient[];
-  onSelectPatient: (p: Patient) => void;
-  onAddPatient: () => void;
-  onNewConsultation: () => void;
-  onStartConsultation: (p: Patient) => void;
-  search: string;
-  onSearchChange: (s: string) => void;
-  user: UserProfile | null;
-  setActiveTab: (tab: string) => void;
-  consultationsToday: number;
-  totalConsultations: number;
-}) => {
-  const sortedPatients = useMemo(() => {
-    return [...patients].sort((a, b) => {
-      const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-      const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [patients]);
-
-  const filteredPatients = sortedPatients.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
-    p.id.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, 4);
-
-  const patientsThisMonth = patients.filter(p => {
-    if (!p.createdAt) return false;
-    const createdAt = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
-    const now = new Date();
-    return createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
-  }).length;
-
-  const lastPatient = sortedPatients.length > 0 ? sortedPatients[0] : null;
-
-  return (
-    <div className="p-4 md:p-8 space-y-6 md:space-y-8">
-      {/* Banner Section */}
-      <section className="relative h-[200px] md:h-[280px] rounded-xl overflow-hidden shadow-xl">
-        <img 
-          src="https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&q=80&w=1000" 
-          alt="Clinical Atelier Header" 
-          className="absolute inset-0 w-full h-full object-cover" 
-          referrerPolicy="no-referrer"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/90 via-primary/50 to-transparent flex items-center px-6 md:px-12">
-          <div className="max-w-xl space-y-2 md:space-y-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
-              <span className="w-2 h-2 bg-secondary rounded-full"></span>
-              <span className="text-[8px] md:text-[10px] text-white uppercase font-bold tracking-widest">Sistema Operativo v2.4</span>
-            </div>
-            <h2 className="text-3xl md:text-[4rem] font-bold text-white leading-tight tracking-tight">
-              {user?.gender === 'female' ? "Bienvenida, Dra. " : "Bienvenido, Dr. "}
-              <span className="block md:inline">
-                {user?.displayName ? (
-                  (() => {
-                    const parts = user.displayName.trim().split(/\s+/);
-                    return parts.length >= 2 ? `${parts[0]} ${parts[1]}` : parts[0];
-                  })()
-                ) : "Especialista"}
-              </span>
-            </h2>
-            <p className="text-sm md:text-xl text-white/80 font-medium">Gestione sus consultas con precisión digital.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Metrics Cards */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Consultas Hoy */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl border-l-4 border-primary shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-primary-fixed rounded-lg">
-              <CalendarDays className="text-primary w-5 h-5" />
-            </div>
-            <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">+12% vs ayer</span>
-          </div>
-          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Consultas Hoy</p>
-          <h3 className="text-3xl font-extrabold text-on-surface mt-1">{consultationsToday}</h3>
-          <div className="mt-4 h-1 bg-surface-container-high rounded-full overflow-hidden">
-            <div className="h-full bg-primary w-[70%]"></div>
-          </div>
-        </div>
-
-        {/* Pacientes Este Mes */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl border-l-4 border-secondary shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-secondary-container rounded-lg">
-              <Users className="text-secondary w-5 h-5" />
-            </div>
-            <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">+5.2%</span>
-          </div>
-          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Pacientes Este Mes</p>
-          <h3 className="text-3xl font-extrabold text-on-surface mt-1">{patientsThisMonth}</h3>
-          <div className="mt-4 flex gap-1 items-end h-8">
-            <div className="w-2 bg-secondary/20 h-[40%] rounded-t"></div>
-            <div className="w-2 bg-secondary/30 h-[60%] rounded-t"></div>
-            <div className="w-2 bg-secondary/40 h-[50%] rounded-t"></div>
-            <div className="w-2 bg-secondary/60 h-[80%] rounded-t"></div>
-            <div className="w-2 bg-secondary h-full rounded-t"></div>
-          </div>
-        </div>
-
-        {/* Último Paciente */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl border-l-4 border-primary shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-primary-fixed rounded-lg">
-              <History className="text-primary w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Último Paciente Visto</p>
-          <h3 className="text-xl font-bold text-on-surface mt-1 truncate">{lastPatient?.name || "No hay pacientes"}</h3>
-          <p className="text-xs text-on-surface-variant mt-1">Hace pocos minutos</p>
-        </div>
-
-        {/* Documentos Generados */}
-        <div className="bg-surface-container-lowest p-6 rounded-xl border-l-4 border-primary shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-primary-fixed rounded-lg">
-              <FileText className="text-primary w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-on-surface-variant uppercase tracking-widest font-bold text-[10px]">Total Consultas</p>
-          <h3 className="text-3xl font-extrabold text-on-surface mt-1">{totalConsultations}</h3>
-          <p className="text-xs text-on-surface-variant mt-1">Registradas en el sistema</p>
-        </div>
-      </section>
-
-      {/* Quick Actions & Recent Patients Grid */}
-      <section className="grid grid-cols-12 gap-8">
-        {/* Recent Patients */}
-        <div className="col-span-12 lg:col-span-8 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold tracking-tight text-on-surface">Pacientes recientes</h2>
-            <button 
-              onClick={() => setActiveTab('patients')}
-              className="text-primary text-sm font-bold hover:underline"
-            >
-              Ver todos los registros
-            </button>
-          </div>
-          <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px] text-left border-collapse">
-                <thead className="bg-surface-container-low">
-                <tr>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Paciente</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Última Visita</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-high">
-                {filteredPatients.map(patient => (
-                  <tr key={patient.id} className="hover:bg-surface-container-low/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-bold">
-                          {patient.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-on-surface">{patient.name}</p>
-                          <p className="text-xs text-on-surface-variant">ID: #{patient.id.slice(-6).toUpperCase()}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-on-surface">Reciente</p>
-                      <p className="text-xs text-on-surface-variant">Chequeo General</p>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => onSelectPatient(patient)}
-                          className="px-4 py-1.5 border border-outline-variant text-primary text-xs font-bold rounded hover:bg-primary-fixed transition-colors"
-                        >
-                          Ver Expediente
-                        </button>
-                        <button 
-                          onClick={() => onStartConsultation(patient)}
-                          className="px-4 py-1.5 bg-primary text-white text-xs font-bold rounded hover:bg-primary-container transition-colors"
-                        >
-                          Nueva Consulta
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="col-span-12 lg:col-span-4 space-y-6">
-          <h2 className="text-2xl font-bold tracking-tight text-on-surface">Acciones rápidas</h2>
-          <div className="grid grid-cols-1 gap-4">
-            <button 
-              onClick={onNewConsultation}
-              className="group flex items-center gap-6 p-6 bg-gradient-to-br from-primary to-[#2a2a9a] rounded-xl text-white shadow-lg hover:shadow-primary/20 transition-all hover:-translate-y-1"
-            >
-              <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-transform">
-                <Stethoscope className="w-8 h-8 text-white" />
-              </div>
-              <div className="text-left">
-                <h4 className="text-xl font-bold">Nueva Consulta</h4>
-                <p className="text-white/70 text-sm">Iniciar registro clínico ahora</p>
-              </div>
-            </button>
-            <button 
-              onClick={onAddPatient}
-              className="group flex items-center gap-6 p-6 bg-surface-container-lowest border border-outline-variant rounded-xl text-on-surface shadow-sm hover:shadow-md transition-all hover:-translate-y-1"
-            >
-              <div className="w-14 h-14 rounded-full bg-primary-fixed flex items-center justify-center group-hover:scale-110 transition-transform">
-                <UserPlus className="w-8 h-8 text-primary" />
-              </div>
-              <div className="text-left">
-                <h4 className="text-xl font-bold">Agregar Paciente</h4>
-                <p className="text-on-surface-variant text-sm">Crear nuevo expediente digital</p>
-              </div>
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-};
-
-
-// Local versions removed in favor of imported components from ./components/
-
-const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; onUpdate: (u: Partial<UserProfile>) => void }) => {
-  const [formData, setFormData] = useState<Partial<UserProfile>>(user || {});
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdate(formData);
-  };
-
-  return (
-    <div className="p-12 max-w-6xl mx-auto">
-      <div className="mb-12 flex items-end justify-between">
-        <div>
-          <span className="label-atelier text-secondary mb-2 block uppercase tracking-widest">Perfil Profesional</span>
-          <h2 className="display-atelier text-primary">Configuración</h2>
-        </div>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => setFormData(user || {})}
-            className="btn-secondary"
-          >
-            Descartar
-          </button>
-          <button 
-            onClick={handleSubmit}
-            className="btn-primary"
-          >
-            Guardar Cambios
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-12 gap-8">
-        <div className="col-span-12 lg:col-span-4 space-y-8">
-          <div className="card-atelier p-8 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-full h-2 sidebar-gradient" />
-            <div className="flex flex-col items-center text-center">
-              <div className="relative mb-6">
-                <div className="w-32 h-32 rounded-full border-4 border-surface-low p-1 bg-white shadow-inner">
-                  <img src={user?.photoURL || "https://picsum.photos/seed/doctor/200"} alt="Profile" className="w-full h-full rounded-full object-cover" />
-                </div>
-                <button className="absolute bottom-1 right-1 bg-white p-2 rounded-full shadow-ambient text-primary hover:text-secondary transition-colors">
-                  <Camera className="w-4 h-4" />
-                </button>
-              </div>
-              <h3 className="title-atelier text-primary mb-1">{user?.displayName}</h3>
-              <p className="text-secondary font-bold text-sm mb-4 body-atelier">{user?.specialty || "Especialidad no definida"}</p>
-              <div className="flex items-center gap-2 bg-surface-low px-4 py-1.5 rounded-full">
-                <BadgeCheck className="w-4 h-4 text-primary fill-current" />
-                <span className="label-atelier text-primary font-bold">ID: {user?.professionalId || "82910-MX"}</span>
-              </div>
-            </div>
-          </div>
-          <div className="bg-surface-high p-8 rounded-2xl">
-            <h4 className="label-atelier text-primary mb-6 uppercase tracking-widest">Estado de Cuenta</h4>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="body-atelier text-high-contrast/60">Plan Actual</span>
-                <span className="body-atelier font-bold text-primary">Premium Atelier</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="body-atelier text-high-contrast/60">Próximo Pago</span>
-                <span className="body-atelier font-bold text-primary">12 Oct, 2026</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-span-12 lg:col-span-8 space-y-8">
-          <section className="card-atelier p-10">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-lg bg-primary/5 flex items-center justify-center text-primary">
-                <UserIcon className="w-5 h-5" />
-              </div>
-              <h3 className="title-atelier text-primary">Datos Personales</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Nombre Completo</label>
-                <input 
-                  className="input-field w-full" 
-                  type="text" 
-                  value={formData.displayName || ''}
-                  onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Correo Electrónico</label>
-                <input 
-                  className="input-field w-full opacity-60 cursor-not-allowed" 
-                  type="email" 
-                  value={formData.email || ''}
-                  readOnly
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Teléfono de Contacto</label>
-                <input 
-                  className="input-field w-full" 
-                  type="tel" 
-                  value={formData.phone || ''}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Ubicación de Consultorio</label>
-                <input 
-                  className="input-field w-full" 
-                  type="text" 
-                  value={formData.officeLocation || ''}
-                  onChange={(e) => setFormData({ ...formData, officeLocation: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Género / Trato</label>
-                <div className="flex gap-4">
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({ ...formData, gender: 'male' })}
-                    className={cn(
-                      "flex-1 p-4 rounded-xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2",
-                      formData.gender === 'male' 
-                        ? "bg-primary/5 border-primary text-primary" 
-                        : "bg-surface-low border-surface-container-high text-high-contrast/40 hover:border-primary/30"
-                    )}
-                  >
-                    <UserIcon className="w-4 h-4" />
-                    Dr. (Masculino)
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({ ...formData, gender: 'female' })}
-                    className={cn(
-                      "flex-1 p-4 rounded-xl border-2 transition-all font-bold text-sm flex items-center justify-center gap-2",
-                      formData.gender === 'female' 
-                        ? "bg-secondary/5 border-secondary text-secondary" 
-                        : "bg-surface-low border-surface-container-high text-high-contrast/40 hover:border-secondary/30"
-                    )}
-                  >
-                    <UserIcon className="w-4 h-4" />
-                    Dra. (Femenino)
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="card-atelier p-10">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-lg bg-secondary/5 flex items-center justify-center text-secondary">
-                <Stethoscope className="w-5 h-5" />
-              </div>
-              <h3 className="title-atelier text-primary">Especialidad Médica</h3>
-            </div>
-            <div className="space-y-8">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Especialidad Principal</label>
-                  <input 
-                    className="input-field w-full" 
-                    type="text" 
-                    value={formData.specialty || ''}
-                    onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Cédula Profesional</label>
-                  <input 
-                    className="input-field w-full" 
-                    type="text" 
-                    value={formData.professionalId || ''}
-                    onChange={(e) => setFormData({ ...formData, professionalId: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="label-atelier text-high-contrast/40 px-1 uppercase tracking-widest text-[10px]">Resumen Profesional (Bio)</label>
-                <textarea 
-                  className="input-field w-full resize-none" 
-                  rows={4}
-                  value={formData.bio || ''}
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                />
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-
-const ConsultationSearchModal = ({ 
-  patient, 
-  onClose, 
-  onSelect 
-}: { 
-  patient: Patient; 
-  onClose: () => void; 
-  onSelect: (c: Consultation) => void;
-}) => {
-  const [consultations, setConsultations] = useState<Consultation[]>([]);
-  const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
-
-  useEffect(() => {
-    const q = query(
-      collection(db, 'patients', patient.id, 'consultations'),
-      orderBy('date', 'desc')
-    );
-    return onSnapshot(q, (snapshot) => {
-      setConsultations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Consultation)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `patients/${patient.id}/consultations`);
-    });
-  }, [patient.id]);
-
-  const filteredConsultations = consultations.filter(c => {
-    const cDate = new Date(c.date?.toDate?.() || c.date);
-    const start = dateFilter.start ? new Date(dateFilter.start) : null;
-    const end = dateFilter.end ? new Date(dateFilter.end) : null;
-    
-    if (start && cDate < start) return false;
-    if (end) {
-      const endOfDay = new Date(end);
-      endOfDay.setHours(23, 59, 59, 999);
-      if (cDate > endOfDay) return false;
-    }
-    return true;
-  });
-
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-[#191970]/40 backdrop-blur-sm"
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative card-atelier w-full max-w-2xl overflow-hidden"
-      >
-        <div className="p-8 flex justify-between items-center border-b border-surface-container-high">
-          <h3 className="title-atelier text-primary">Buscar Consulta Anterior</h3>
-          <button onClick={onClose} className="p-2 hover:bg-surface-high rounded-full transition-colors">
-            <X className="w-6 h-6 text-high-contrast/40" />
-          </button>
-        </div>
-        
-        <div className="p-8 bg-surface-low border-b border-surface-container-high">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-primary" />
-              <input 
-                type="date" 
-                className="bg-white border border-surface-high rounded-lg text-xs font-bold text-high-contrast focus:ring-primary p-2"
-                value={dateFilter.start}
-                onChange={(e) => setDateFilter({ ...dateFilter, start: e.target.value })}
-              />
-            </div>
-            <span className="text-high-contrast/20 text-xs font-bold">a</span>
-            <div className="flex items-center gap-2">
-              <input 
-                type="date" 
-                className="bg-white border border-surface-high rounded-lg text-xs font-bold text-high-contrast focus:ring-primary p-2"
-                value={dateFilter.end}
-                onChange={(e) => setDateFilter({ ...dateFilter, end: e.target.value })}
-              />
-            </div>
-            {(dateFilter.start || dateFilter.end) && (
-              <button 
-                onClick={() => setDateFilter({ start: '', end: '' })}
-                className="text-xs font-bold text-red-500 hover:underline"
-              >
-                Limpiar Filtros
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="p-8 space-y-4 max-h-[50vh] overflow-y-auto no-scrollbar">
-          {filteredConsultations.length > 0 ? (
-            filteredConsultations.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onSelect(c)}
-                className="w-full text-left p-4 rounded-xl bg-white border border-surface-high hover:border-primary hover:shadow-md transition-all group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <p className="font-bold text-primary group-hover:text-secondary transition-colors">{c.title || "Consulta Médica"}</p>
-                  <p className="text-[10px] font-black text-high-contrast/40 uppercase">{new Date(c.date?.toDate?.() || c.date).toLocaleDateString()}</p>
-                </div>
-                <p className="text-xs text-high-contrast/60 line-clamp-2">{c.diagnosis}</p>
-              </button>
-            ))
-          ) : (
-            <div className="text-center py-12">
-              <History className="w-12 h-12 text-high-contrast/10 mx-auto mb-4" />
-              <p className="text-high-contrast/40 font-bold">No se encontraron consultas</p>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-};
-
-const AdminPanel = ({ currentUserEmail }: { currentUserEmail: string }) => {
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [confirmConfig, setConfirmConfig] = useState<{
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'users'));
-        setUsers(snapshot.docs.map(d => ({ 
-          uid: d.id, 
-          ...d.data() 
-        } as UserProfile)));
-      } catch (err) {
-        console.error('Error fetching users:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUsers();
-  }, []);
-
-  const handleChangePlan = (uid: string, newPlan: 'free' | 'pro' | 'whitelisted') => {
-    setConfirmConfig({
-      title: "Confirmar Cambio de Plan",
-      message: `¿Estás seguro que deseas cambiar el plan de este usuario a ${newPlan.toUpperCase()}?`,
-      onConfirm: async () => {
-        setUpdatingId(uid);
-        try {
-          await updateDoc(doc(db, 'users', uid), { plan: newPlan });
-          setUsers(prev => prev.map(u => u.uid === uid ? { ...u, plan: newPlan } : u));
-        } catch (err) {
-          console.error('Error updating plan:', err);
-        } finally {
-          setUpdatingId(null);
-          setConfirmConfig(null);
-        }
-      }
-    });
-  };
-
-  const handleChangeRole = (uid: string, newRole: 'doctor' | 'admin') => {
-    setConfirmConfig({
-      title: "Confirmar Cambio de Rol",
-      message: `¿Estás seguro que deseas cambiar el rol de este usuario a ${newRole.toUpperCase()}? El acceso administrativo otorga control total sobre la plataforma.`,
-      onConfirm: async () => {
-        setUpdatingId(uid);
-        try {
-          await updateDoc(doc(db, 'users', uid), { role: newRole });
-          setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role: newRole } : u));
-        } catch (err) {
-          console.error('Error updating role:', err);
-        } finally {
-          setUpdatingId(null);
-          setConfirmConfig(null);
-        }
-      }
-    });
-  };
-
-  const getPlanBadge = (plan?: string) => {
-    switch (plan) {
-      case 'whitelisted': return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      case 'pro': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      default: return 'bg-white/10 text-white/60 border-white/20';
-    }
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin w-8 h-8 border-2 border-white/20 border-t-white rounded-full" />
-    </div>
-  );
-
-  return (
-    <div className="space-y-6">
-      <AnimatePresence>
-        {confirmConfig && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setConfirmConfig(null)}
-              className="absolute inset-0 bg-[#191970]/40 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative card-atelier w-full max-w-md p-8 border-none shadow-2xl"
-            >
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-primary/5 flex items-center justify-center text-primary">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <h3 className="title-atelier text-primary">{confirmConfig.title}</h3>
-              </div>
-              <p className="body-atelier text-high-contrast/70 mb-8 leading-relaxed">
-                {confirmConfig.message}
-              </p>
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setConfirmConfig(null)}
-                  className="flex-1 btn-secondary"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={confirmConfig.onConfirm}
-                  className="flex-1 btn-primary"
-                >
-                  Confirmar
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <div>
-        <h2 className="text-3xl font-bold text-primary tracking-tight">Gestión de Usuarios</h2>
-        <p className="text-high-contrast/60 text-sm mt-1 font-medium">
-          {users.length} usuarios registrados · Acceso administrativo exclusivo
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {users.map(u => (
-          <div
-            key={u.uid}
-            className="flex items-center justify-between p-5 rounded-2xl bg-white border border-surface-container-high shadow-ambient transition-all hover:shadow-lg hover:-translate-y-0.5"
-          >
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <img
-                  src={u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=191970&color=fff`}
-                  alt={u.displayName}
-                  className="w-12 h-12 rounded-full object-cover border-2 border-surface-container-low"
-                />
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
-              </div>
-              <div>
-                <p className="text-base font-bold text-primary">{u.displayName}</p>
-                <p className="text-xs font-medium text-high-contrast/60">{u.email}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  {u.specialty && (
-                    <p className="text-[10px] font-black uppercase tracking-widest text-high-contrast/30">{u.specialty}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border ${getPlanBadge(u.plan)}`}>
-                {u.plan || 'free'}
-              </span>
-
-              {u.email !== currentUserEmail && (
-                <div className="flex items-center gap-2">
-                  <div className="relative group">
-                    <select
-                      disabled={updatingId === u.uid}
-                      value={u.plan || 'free'}
-                      onChange={(e) => handleChangePlan(u.uid, e.target.value as any)}
-                      className="text-xs font-bold bg-surface-container-low border border-surface-container-high rounded-xl px-4 py-2.5 text-primary hover:bg-white hover:border-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 disabled:opacity-50 cursor-pointer appearance-none pr-10"
-                    >
-                      <option value="free">Free</option>
-                      <option value="pro">Pro</option>
-                      <option value="whitelisted">Whitelisted ✓</option>
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary/40">
-                      <ChevronDown className="w-4 h-4" />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {u.email === currentUserEmail && (
-                <span className="text-[10px] font-bold text-high-contrast/30 uppercase tracking-widest bg-surface-container-low px-3 py-1.5 rounded-full">Admin Root</span>
-              )}
-
-              {updatingId === u.uid && (
-                <div className="w-5 h-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+import { PatientsList } from './pages/PatientsList';
+import { Dashboard } from './pages/Dashboard';
+import { SettingsScreen } from './pages/SettingsScreen';
+import { AdminPanel } from './pages/AdminPanel';
+import { ConsultationSearchModal } from './components/ConsultationSearchModal';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = location.pathname.substring(1) || 'dashboard';
+  const setActiveTab = (tab: string) => navigate(`/${tab}`);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [search, setSearch] = useState('');
@@ -2376,99 +1392,101 @@ export default function App() {
                 />
               ) : (
                 <>
-                  {activeTab === 'dashboard' && (
-                    <Dashboard
-                      patients={patients}
-                      onSelectPatient={setSelectedPatient}
-                      onAddPatient={() => setShowAddPatient(true)}
-                      onNewConsultation={() => {
-                        setNewConsultation({
-                          type: 'Consulta General',
-                          title: '',
-                          findings: '',
-                          diagnosis: '',
-                          plan: '',
-                          vitals: {
-                            bloodPressure: '120/80',
-                            labGabinete: ''
-                          }
-                        });
-                        setShowPatientSearchModal(true);
-                      }}
-                      onStartConsultation={(p) => {
-                        setSelectedPatient(p);
-                        setNewConsultation({
-                          type: 'Consulta General',
-                          title: '',
-                          findings: '',
-                          diagnosis: '',
-                          plan: '',
-                          vitals: {
-                            bloodPressure: '120/80',
-                            labGabinete: ''
-                          }
-                        });
-                        setShowAddConsultation(true);
-                      }}
-                      search={search}
-                      onSearchChange={setSearch}
-                      user={profile}
-                      setActiveTab={setActiveTab}
-                      consultationsToday={consultationsToday}
-                      totalConsultations={totalConsultations}
-                    />
-                  )}
-                  {activeTab === 'patients' && (
-                    <PatientsList 
-                      patients={patients} 
-                      onSelectPatient={setSelectedPatient} 
-                      onAddPatient={() => setShowAddPatient(true)}
-                      onEditPatient={(p) => {
-                        setSelectedPatient(p);
-                        setNewPatient({
-                          name: p.name,
-                          age: p.age,
-                          gender: p.gender,
-                          bloodType: p.bloodType,
-                          height: p.height,
-                          weight: p.weight,
-                          allergies: p.allergies || '',
-                          address: p.address || '',
-                          phone: p.phone || '',
-                          personalHistory: p.personalHistory || '',
-                          familyHistory: p.familyHistory || ''
-                        });
-                        setShowEditPatient(true);
-                      }}
-                      onDeletePatient={handleDeletePatient}
-                      onStartConsultation={(p) => {
-                        setSelectedPatient(p);
-                        setNewConsultation({
-                          type: 'Consulta General',
-                          title: '',
-                          findings: '',
-                          diagnosis: '',
-                          plan: '',
-                          vitals: {
-                            bloodPressure: '120/80',
-                            labGabinete: ''
-                          }
-                        });
-                        setShowAddConsultation(true);
-                      }}
-                      search={search}
-                      onSearchChange={setSearch}
-                      dateFilter={patientDateFilter}
-                      onDateFilterChange={setPatientDateFilter}
-                    />
-                  )}
-                  {activeTab === 'generate' && <DocumentGenerator user={user} profile={profile} />}
-                  {activeTab === 'assistant' && <AIAssistant user={user} profile={profile} />}
-                  {activeTab === 'plans' && <PaymentPlans user={profile} />}
-                  {activeTab === 'settings' && <SettingsScreen user={profile} onUpdate={handleUpdateProfile} />}
-                  {activeTab === 'admin' && isAdmin && (
-                    <AdminPanel currentUserEmail={profile?.email || ''} />
-                  )}
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/dashboard" element={
+                      <Dashboard
+                        patients={patients}
+                        onSelectPatient={setSelectedPatient}
+                        onAddPatient={() => setShowAddPatient(true)}
+                        onNewConsultation={() => {
+                          setNewConsultation({
+                            type: 'Consulta General',
+                            title: '',
+                            findings: '',
+                            diagnosis: '',
+                            plan: '',
+                            vitals: {
+                              bloodPressure: '120/80',
+                              labGabinete: ''
+                            }
+                          });
+                          setShowPatientSearchModal(true);
+                        }}
+                        onStartConsultation={(p) => {
+                          setSelectedPatient(p);
+                          setNewConsultation({
+                            type: 'Consulta General',
+                            title: '',
+                            findings: '',
+                            diagnosis: '',
+                            plan: '',
+                            vitals: {
+                              bloodPressure: '120/80',
+                              labGabinete: ''
+                            }
+                          });
+                          setShowAddConsultation(true);
+                        }}
+                        search={search}
+                        onSearchChange={setSearch}
+                        user={profile}
+                        setActiveTab={setActiveTab}
+                        consultationsToday={consultationsToday}
+                        totalConsultations={totalConsultations}
+                      />
+                    } />
+                    <Route path="/patients" element={
+                      <PatientsList 
+                        patients={patients} 
+                        onSelectPatient={setSelectedPatient} 
+                        onAddPatient={() => setShowAddPatient(true)}
+                        onEditPatient={(p) => {
+                          setSelectedPatient(p);
+                          setNewPatient({
+                            name: p.name,
+                            age: p.age,
+                            gender: p.gender,
+                            bloodType: p.bloodType,
+                            height: p.height,
+                            weight: p.weight,
+                            allergies: p.allergies || '',
+                            address: p.address || '',
+                            phone: p.phone || '',
+                            personalHistory: p.personalHistory || '',
+                            familyHistory: p.familyHistory || ''
+                          });
+                          setShowEditPatient(true);
+                        }}
+                        onDeletePatient={handleDeletePatient}
+                        onStartConsultation={(p) => {
+                          setSelectedPatient(p);
+                          setNewConsultation({
+                            type: 'Consulta General',
+                            title: '',
+                            findings: '',
+                            diagnosis: '',
+                            plan: '',
+                            vitals: {
+                              bloodPressure: '120/80',
+                              labGabinete: ''
+                            }
+                          });
+                          setShowAddConsultation(true);
+                        }}
+                        search={search}
+                        onSearchChange={setSearch}
+                        dateFilter={patientDateFilter}
+                        onDateFilterChange={setPatientDateFilter}
+                      />
+                    } />
+                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} />} />
+                    <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
+                    <Route path="/plans" element={<PaymentPlans user={profile} />} />
+                    <Route path="/settings" element={<SettingsScreen user={profile} onUpdate={handleUpdateProfile} />} />
+                    <Route path="/admin" element={isAdmin ? <AdminPanel currentUserEmail={profile?.email || ''} /> : <Navigate to="/dashboard" replace />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
                 </>
               )}
             </motion.div>
