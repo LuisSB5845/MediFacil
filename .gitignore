@@ -1,27 +1,42 @@
+# Dependencias
 node_modules/
+.pnpm-store/
+
+# Builds y Distribución
 build/
 dist/
-coverage/
-.DS_Store
-*.log
-backend/logs/
-.env*
-!.env.example
+frontend/dist/
+.vercel/
 
-# Firebase
+# Cobertura y Logs
+coverage/
+*.log
+*.log*
+backend/logs/
+
+# Entorno y Secretos
+.env
+.env.*
+!.env.example
+*.env
+
+# Credenciales de Firebase y GCP
 firebase-applet-config.json
 firebase-blueprint.json
 .firebase/
-
-.vercel
-
-# Secretos y backups
 *-firebase-adminsdk-*.json
-*.rar
+firebase-key.json
 
-# Dev test scripts
-backend/src/test_*.ts
-
-# Admin documentation and private scripts
+# Documentos locales y scripts administrativos
 HOWTOADD_ADMINS
 backend/setAdmin.ts
+backend/src/test_*.ts
+
+# Archivos del Sistema Operativo e IDEs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.rar
+*.zip
