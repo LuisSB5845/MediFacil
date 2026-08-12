@@ -16,6 +16,7 @@ import { aiModelName } from './config/ai.js';
 // Importación de rutas y controladores
 import paymentRoutes from './routes/paymentRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 import { handleStripeWebhook } from './controllers/paymentController.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +98,7 @@ app.use(express.json({ limit: '10kb' }));
 // 6. MONTAR RUTAS DE LA API
 app.use('/api/stripe', paymentRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/user', userRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {

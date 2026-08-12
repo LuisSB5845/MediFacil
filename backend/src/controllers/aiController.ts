@@ -1,16 +1,18 @@
 import express from 'express';
-import { generateText, tool, stepCountIs } from 'ai';
+import { generateText, generateObject, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { model, aiModelName, APP_CONTEXT } from '../config/ai.js';
 import { db } from '../config/firebase.js';
 import logger from '../utils/logger.js';
 import { sendDiscordAlert } from '../utils/alerts.js';
 import { AI_LIMITS } from '../middlewares/auth.js';
+import { NarrativeCertificationSchema, BirthCertificationSchema } from '../schemas/certificationSchemas.js';
 
 export const AISchema = z.object({
   body: z.object({
     prompt: z.string().min(1).max(5000),
     context: z.string().optional(),
+    certificationType: z.enum(['narrative', 'birth']).optional(),
   }),
 });
 
@@ -291,3 +293,50 @@ export const getAIUsage = async (req: express.Request, res: express.Response) =>
     res.status(500).json({ error: 'Error obteniendo datos de uso.' });
   }
 };
+
+// 5. Generador de Certificaciones Estructuradas con generateObject
+export const generateCertification = async (req: express.Request, res: express.Response) => {
+  const { prompt, context, certificationType = 'narrative' } = req.body;
+  const userId = (req as any).user?.uid;
+
+  logger.info(`Generando certificación estructurada (${certificationType}) para usuario: ${userId}`);
+
+  try {
+    const targetSchema = certificationType === 'birth' 
+      ? BirthCertificationSchema 
+      : NarrativeCertificationSchema;
+
+    const systemPrompt = certificationType === 'birth'
+      ? `Eres un asistente médico experto en extracción y formalización de certificaciones y constancias de nacimiento. Extrae e infiere los datos requeridos cumpliendo estrictamente con los campos descritos en el esquema.`
+      : `Eres un asistente médico experto en la emisión de certificados médicos narrativos. Extrae e infiere la información requerida cumpliendo con el esquema.`;
+
+    const result = await generateObject({
+      model: model,
+      schema: targetSchema,
+      system: systemPrompt,
+      prompt: `Información clínica / contexto del médico:\n${context || 'No especificada'}\n\nInstrucción o datos del documento dictados:\n"${prompt}"`,
+    });
+
+    const quota = (req as any).aiQuota;
+    res.json({
+      data: result.object,
+      certificationType,
+      quota: quota || null,
+    });
+  } catch (error: any) {
+    logger.error("Error en generateCertification Controller:", { error: error.message, stack: error.stack });
+    
+    sendDiscordAlert({
+      title: 'Structured Certification AI Failure',
+      message: `Error procesando certificación de tipo ${certificationType}.`,
+      level: 'error',
+      context: { errMsg: error.message, path: '/api/ai/generate-certification' }
+    });
+
+    res.status(500).json({ 
+      error: "Error generando la certificación estructurada",
+      details: error.message 
+    });
+  }
+};
+

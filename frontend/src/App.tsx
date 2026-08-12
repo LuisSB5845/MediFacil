@@ -1147,6 +1147,23 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'users', user.uid), updates);
       setProfile(prev => prev ? { ...prev, ...updates } : null);
+
+      try {
+        const idToken = await user.getIdToken();
+        const API_URL = (import.meta as any).env.VITE_API_URL || 
+          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:4000/api' : "/api");
+        await fetch(`${API_URL}/user/profile`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(updates),
+        });
+      } catch (backendErr) {
+        console.warn('Backend sync warning (Firestore updated successfully):', backendErr);
+      }
+      alert('¡Perfil e información institucional guardados con éxito!');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }

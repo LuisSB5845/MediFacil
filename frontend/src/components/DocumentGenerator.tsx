@@ -35,9 +35,11 @@ import { UserProfile, ClinicalDocument } from '../types';
 import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { createChat, analyzeMedicalImage } from '../lib/ai';
+import { createChat, analyzeMedicalImage, generateStructuredCertification } from '../lib/ai';
+import { CertificateRenderer } from './templates/CertificateRenderer';
 import mammoth from 'mammoth';
 import * as pdfjs from 'pdfjs-dist';
+
 
 // Configurar el worker de PDF.js (necesario para que funcione en el navegador)
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
@@ -89,6 +91,9 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   const [extractedText, setExtractedText] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [generatedDocContent, setGeneratedDocContent] = useState('');
+  const [certificationType, setCertificationType] = useState<'narrative' | 'birth'>('narrative');
+  const [structuredData, setStructuredData] = useState<any | null>(null);
+
 
   // Búsqueda de pacientes
   useEffect(() => {
@@ -222,51 +227,44 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
         return;
       }
       
-      console.log("DocumentGenerator: Calling AI...");
-      const chat = createChat();
+      console.log("DocumentGenerator: Calling Structured AI Certification...", { certificationType });
       
-      // Prompt especializado para GENERAR DOCUMENTOS, no para chatear
       const documentContext = extractedText ? `DOCUMENTO DE REFERENCIA SUBIDO (Extraído):\n"""\n${extractedText}\n"""\n\n` : "";
+      const fullContext = `${documentContext}Perfil Doctor: Dra. ${profile?.displayName || ''} (${profile?.specialty || ''})`;
       
-      const promptWithContext = `Eres un transcriptor y redactor médico experto. Tu tarea es generar el CUERPO de un documento clínico basado en las instrucciones del doctor.
- 
-${documentContext}
-INSTRUCCIÓN DEL DOCTOR: "${aiPrompt}"
- 
-REGLAS CRÍTICAS:
-1. Responde ÚNICAMENTE con el contenido del documento.
-2. NO incluyas saludos, introducciones ("Aquí tienes...", "Entendido...") ni despedidas.
-3. Si el doctor pide cambiar datos (como su nombre o el del paciente), cámbialos en el texto final.
-4. Mantén un tono profesional y clínico.
- 
-CONTENIDO DEL DOCUMENTO:`;
+      const result = await generateStructuredCertification(aiPrompt, fullContext, certificationType);
+      
+      if (result && result.data) {
+        setStructuredData(result.data);
+        const titleText = certificationType === 'birth'
+          ? `Constancia de Nacimiento - ${result.data.nombreMadre || 'Recién Nacido'}`
+          : `Certificado Médico - ${result.data.patientName || 'Paciente'}`;
+          
+        setGeneratedDocContent(JSON.stringify(result.data, null, 2));
 
-      const result = await chat.sendMessage(promptWithContext);
-      const text = await result.response.then(r => r.text());
-      const cleanText = text.trim();
-      setGeneratedDocContent(cleanText);
-      console.log("DocumentGenerator: AI response received.");
-
-      // Guardar documento generado por IA
-      if (user) {
-        console.log("DocumentGenerator: Saving AI document...");
-        await addDoc(collection(db, 'clinical_documents'), {
-          title: `Documento Personalizado`,
-          subtitle: `Generado hoy • Asistente IA`,
-          type: 'ai',
-          doctorUid: user.uid,
-          createdAt: serverTimestamp(),
-          content: cleanText
-        });
-        console.log("DocumentGenerator: AI document saved.");
+        if (user) {
+          console.log("DocumentGenerator: Saving Structured AI document...");
+          await addDoc(collection(db, 'clinical_documents'), {
+            title: titleText,
+            subtitle: `Generado hoy • Certificación (${certificationType})`,
+            type: 'structured_certification',
+            certificationType: certificationType,
+            structuredData: result.data,
+            doctorUid: user.uid,
+            createdAt: serverTimestamp(),
+            content: JSON.stringify(result.data, null, 2)
+          });
+          console.log("DocumentGenerator: Structured document saved.");
+        }
       }
     } catch (error: any) {
       console.error("DocumentGenerator Error:", error);
-      alert(`Error generando documento: ${error.message || "Error desconocido"}`);
+      alert(`Error generando certificado: ${error.message || "Error desconocido"}`);
     } finally {
       setIsGenerating(false);
     }
   };
+
 
   const handleExportPDF = async () => {
     if (!documentRef.current) return;
@@ -362,9 +360,12 @@ CONTENIDO DEL DOCUMENTO:`;
       });
     } else {
       setView('ai');
-      setGeneratedDocContent(doc.content);
+      setGeneratedDocContent(doc.content || '');
+      setStructuredData(doc.structuredData || null);
+      setCertificationType(doc.certificationType || 'narrative');
     }
   };
+
 
   const renderSelection = () => (
     <div className="max-w-7xl mx-auto py-16 space-y-24 px-8">
@@ -673,20 +674,52 @@ CONTENIDO DEL DOCUMENTO:`;
                     </div>
 
                     <div className="space-y-8">
-                      <div className="relative group">
-                        <textarea 
-                          placeholder="Describe el documento que necesitas o sube un archivo de referencia..."
-                          className="w-full h-72 p-10 bg-surface-low border border-surface-container-high rounded-[3rem] text-base font-medium focus:outline-none focus:border-primary focus:bg-white transition-all resize-none leading-relaxed shadow-inner"
-                          value={aiPrompt}
-                          onChange={(e) => setAiPrompt(e.target.value)}
-                        />
-                        <button 
-                          onClick={handleGenerate}
-                          disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
-                          className="absolute bottom-8 right-8 w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:bg-primary-container transition-all shadow-xl shadow-primary/30 group-hover:scale-105 disabled:opacity-50 disabled:scale-100"
-                        >
-                          {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowLeft className="w-6 h-6 rotate-[90deg]" />}
-                        </button>
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest px-1">Tipo de Certificación IA</label>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setCertificationType('narrative')}
+                              className={cn(
+                                "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all border",
+                                certificationType === 'narrative'
+                                  ? "bg-primary text-white border-primary shadow-md shadow-primary/20"
+                                  : "bg-surface-low text-high-contrast/70 border-surface-container-high hover:border-primary/30"
+                              )}
+                            >
+                              📜 Certificado Médico
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCertificationType('birth')}
+                              className={cn(
+                                "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all border",
+                                certificationType === 'birth'
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20"
+                                  : "bg-surface-low text-high-contrast/70 border-surface-container-high hover:border-emerald-500/30"
+                              )}
+                            >
+                              👶 Nacido Vivo
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="relative group">
+                          <textarea 
+                            placeholder={certificationType === 'birth' ? "Ingresa datos del nacimiento (Nombre de la madre, sexo, peso, hora, fecha...)" : "Describe el certificado que necesitas..."}
+                            className="w-full h-64 p-8 bg-surface-low border border-surface-container-high rounded-[2.5rem] text-base font-medium focus:outline-none focus:border-primary focus:bg-white transition-all resize-none leading-relaxed shadow-inner"
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                          />
+                          <button 
+                            onClick={handleGenerate}
+                            disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
+                            className="absolute bottom-6 right-6 w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:bg-primary-container transition-all shadow-xl shadow-primary/30 group-hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                          >
+                            {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowLeft className="w-6 h-6 rotate-[90deg]" />}
+                          </button>
+                        </div>
                       </div>
 
                       <div 
@@ -710,7 +743,7 @@ CONTENIDO DEL DOCUMENTO:`;
                             { label: "Modificar este documento", icon: <FileEdit className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nModifica el documento anterior para...") },
                             { label: "Cambiar nombre del paciente", icon: <UserPlus className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nCambia el nombre del paciente a: ") },
                             { label: "Hacer más formal", icon: <Gavel className="w-4 h-4" />, action: () => setAiPrompt(prev => prev + "\nRedacta el documento con un tono más formal y técnico.") },
-                            { label: "Limpiar editor", icon: <X className="w-4 h-4" />, action: () => { setAiPrompt(''); setExtractedText(''); setUploadedFile(null); setGeneratedDocContent(''); } }
+                            { label: "Limpiar editor", icon: <X className="w-4 h-4" />, action: () => { setAiPrompt(''); setExtractedText(''); setUploadedFile(null); setGeneratedDocContent(''); setStructuredData(null); } }
                           ].map((action, i) => (
                             <button 
                               key={i} 
@@ -733,15 +766,15 @@ CONTENIDO DEL DOCUMENTO:`;
                       className="w-full h-18 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/30 py-5 disabled:opacity-50"
                     >
                       {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
-                      {isGenerating ? "GENERANDO..." : "ANALIZAR CON IA"}
+                      {isGenerating ? "GENERANDO..." : "GENERAR CON IA"}
                     </button>
                   </div>
                 </div>
 
-                {/* AI Preview Right */}
+                {/* AI Preview Right con CertificateRenderer */}
                 <div className="flex-1 bg-[#EEF2FF] overflow-y-auto no-scrollbar p-16 relative flex flex-col items-center">
                   <AnimatePresence mode="wait">
-                    {generatedDocContent ? (
+                    {generatedDocContent || structuredData ? (
                       <motion.div 
                         key="document"
                         initial={{ opacity: 0, y: 20 }}
@@ -751,7 +784,7 @@ CONTENIDO DEL DOCUMENTO:`;
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3 text-primary">
                             <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                            <span className="text-[10px] font-black uppercase tracking-widest">Documento Generado por IA</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Documento Estructurado IA</span>
                           </div>
                           <div className="flex gap-4">
                             <button onClick={handleExportPDF} disabled={isExporting} className="h-11 px-5 bg-white border border-surface-container-high rounded-xl text-xs font-black flex items-center gap-2 hover:shadow-lg transition-all">
@@ -760,33 +793,13 @@ CONTENIDO DEL DOCUMENTO:`;
                           </div>
                         </div>
 
-                        <div className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-20 relative flex flex-col min-h-[1100px] h-auto w-full overflow-visible" ref={documentRef}>
-                           {/* Document Header (Reusing Template Header Style) */}
-                           <div className="flex justify-between items-start border-b-2 border-primary/5 pb-10 mb-14 shrink-0">
-                             <div className="flex items-center gap-8">
-                                <div className="w-16 h-16 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-center text-primary shadow-sm">
-                                   <BriefcaseMedical className="w-8 h-8" />
-                                </div>
-                                <div>
-                                  <h2 className="text-xl font-black text-primary leading-tight">Dra. {profile?.displayName || 'Isabel Beato'}</h2>
-                                  <p className="text-[10px] font-bold text-high-contrast/50 uppercase tracking-widest mt-1">{profile?.specialty || 'Especialista'}</p>
-                                </div>
-                             </div>
-                             <div className="text-right">
-                                <p className="text-[10px] font-black text-high-contrast/80 uppercase tracking-widest">MediFácil Hospital Arcos</p>
-                                <p className="text-[8px] font-medium text-high-contrast/40 uppercase">{new Date().toLocaleDateString('es-DO', { dateStyle: 'long' })}</p>
-                             </div>
-                          </div>
-
-                          <div className="flex-1 whitespace-pre-wrap text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
-                            {generatedDocContent}
-                          </div>
-
-                          <div className="mt-auto pt-10 border-t border-surface-container-high flex flex-col items-center shrink-0">
-                            <div className="w-48 h-[1px] bg-high-contrast/20 mb-4" />
-                            <p className="text-[10px] font-black uppercase tracking-widest text-high-contrast/40">Firma Autorizada</p>
-                          </div>
-                        </div>
+                        <CertificateRenderer
+                          documentContent={generatedDocContent}
+                          structuredData={structuredData}
+                          certificationType={certificationType}
+                          profile={profile}
+                          documentRef={documentRef}
+                        />
                       </motion.div>
                     ) : (
                       <motion.div 

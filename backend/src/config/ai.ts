@@ -26,11 +26,23 @@ logger.info(`🤖 Modelo de IA activo en Config: ${aiModelName}`);
 // Cargar contexto
 let APP_CONTEXT = "";
 try {
-  const contextPath = path.resolve(__dirname, '../../../APP_CONTEXT.md');
-  APP_CONTEXT = fs.readFileSync(contextPath, 'utf-8');
-  logger.info("✅ APP_CONTEXT.md cargado correctamente (AI Config).");
+  const candidatePaths = [
+    path.resolve(process.cwd(), 'APP_CONTEXT.md'),
+    path.resolve(process.cwd(), 'backend', 'APP_CONTEXT.md'),
+    path.resolve(__dirname, '../../APP_CONTEXT.md'),
+    path.resolve(__dirname, '../../../APP_CONTEXT.md'),
+    path.resolve(__dirname, '../APP_CONTEXT.md'),
+  ];
+  const contextPath = candidatePaths.find(p => fs.existsSync(p));
+  if (contextPath) {
+    APP_CONTEXT = fs.readFileSync(contextPath, 'utf-8');
+    logger.info(`✅ APP_CONTEXT.md cargado correctamente desde ${contextPath}.`);
+  } else {
+    logger.warn("⚠️ APP_CONTEXT.md no encontrado en Config.");
+  }
 } catch {
   logger.warn("⚠️ APP_CONTEXT.md no encontrado en Config.");
 }
 
 export { model, aiModelName, APP_CONTEXT };
+
