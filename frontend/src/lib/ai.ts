@@ -168,8 +168,41 @@ export function createChat(history: any[] = []) {
   };
 }
 
+/**
+ * Generates a structured certification (narrative or birth) using generateObject on the backend.
+ */
+export async function generateStructuredCertification(
+  prompt: string,
+  context: string = "",
+  certificationType: 'narrative' | 'birth' = 'narrative'
+) {
+  try {
+    const authHeader = await getAuthHeader();
+    const response = await fetch(`${API_URL}/ai/generate-certification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader
+      },
+      body: JSON.stringify({ prompt, context, certificationType }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.details || errorData.error || "Error al generar la certificación estructurada");
+    }
+
+    const resData = await response.json();
+    return resData; // { data, certificationType, quota }
+  } catch (error: any) {
+    console.error("Error in generateStructuredCertification:", error);
+    throw error;
+  }
+}
+
 export const models = {
   pro: "backend-managed",
   flash: "backend-managed",
   image: "backend-managed",
 };
+

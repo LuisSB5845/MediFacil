@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Regla específica para los logos de clínica y de médico: logos/clinic/{doctorUid} y logos/doctor/{doctorUid}
+    match /logos/{type}/{doctorUid} {
+      // Lectura pública autorizada para permitir visualizar los logos en la UI y documentos renderizados
+      allow read: if true;
+      
+      // Escritura permitida únicamente si el usuario está autenticado y su UID coincide con el doctorUid en la ruta
+      allow write: if request.auth != null && request.auth.uid == doctorUid;
+    }
+
+    // Regla de respaldo general para el resto de archivos en Firebase Storage
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

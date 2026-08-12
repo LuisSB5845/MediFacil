@@ -57,6 +57,16 @@ export interface UserProfile {
   plan?: 'free' | 'pro' | 'whitelisted';
   role?: 'doctor' | 'admin';
   specialty?: string;
+  exequatur?: string;
+  clinicName?: string;
+  clinicTagline?: string;
+  clinicAddress?: string;
+  clinicSuite?: string;
+  phoneOffice?: string;
+  phoneExt?: string;
+  phoneCell?: string;
+  clinicLogoUrl?: string;
+  doctorLogoUrl?: string;
   consultationsThisMonth?: number;
   documentsThisMonth?: number;
   aiMessagesThisMonth?: number;
@@ -69,14 +79,40 @@ export interface UserProfile {
   officeLocation?: string;
 }
 
+export interface BirthCertificationData {
+  nombreMadre: string;
+  cedulaMadre: string | null;
+  sexoProducto: 'Masculino' | 'Femenino';
+  peso: string;
+  hora: string;
+  dia: string;
+  mes: string;
+  anio: string;
+  medicoTratante: string;
+  fechaExpedicion: string;
+}
+
+export interface NarrativeCertificationData {
+  patientName: string;
+  patientId?: string;
+  diagnosis: string;
+  restDays?: string;
+  recommendations?: string;
+  issuerDoctor: string;
+  date: string;
+}
+
 export interface ClinicalDocument {
   id: string;
   title: string;
   subtitle: string;
-  type: 'ai' | 'template';
+  type: 'ai' | 'template' | 'structured_certification';
   doctorUid: string;
   patientName?: string;
   createdAt: any;
   content: string;
+  structuredData?: NarrativeCertificationData | BirthCertificationData;
+  certificationType?: 'narrative' | 'birth';
   templateType?: string;
 }
+
