@@ -55,7 +55,11 @@ export const RecetaRxTemplate = ({
         <div className="flex items-center gap-4">
           {doctorLogoUrl ? (
             // El logo personal ya trae el nombre estilizado: no se duplica en texto.
-            <img src={doctorLogoUrl} alt={doctorName} className="h-16 w-auto object-contain" />
+            <img
+              src={doctorLogoUrl}
+              alt={doctorName}
+              className="w-auto h-auto max-w-[280px] max-h-40 object-contain"
+            />
           ) : (
             <h1 className="text-3xl font-black text-primary italic tracking-tight">{doctorName}</h1>
           )}

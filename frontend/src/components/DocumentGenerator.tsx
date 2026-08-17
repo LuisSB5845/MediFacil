@@ -607,7 +607,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                       </div>
                     </div>
 
-                    <div className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-24 relative flex flex-col min-h-[1200px]" ref={documentRef}>
+                    <div id="printable-document" className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-24 relative flex flex-col min-h-[1200px]" ref={documentRef}>
                        {/* Document Header */}
                        <div className="flex justify-between items-start border-b-2 border-primary/5 pb-14 mb-20">
                          <div className="flex items-center gap-10">

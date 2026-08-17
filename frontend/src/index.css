@@ -184,7 +184,30 @@ html {
   animation: borderShimmer 4s linear infinite;
 }
 
+/* Sin márgenes de página: así el navegador tampoco imprime sus cabeceras
+   (fecha, título, URL, número de página). El margen real lo pone el propio
+   documento con su padding interno. */
+@page {
+  size: A4;
+  margin: 0;
+}
+
 @media print {
+  /* El layout de la app es una pantalla con scroll: sin esto, las alturas
+     fijas y los contenedores con overflow recortan el documento y generan
+     páginas en blanco. */
+  html, body, #root, main {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* El cromo de la app se quita del flujo. Solo ocultarlo no basta: un
+     elemento invisible sigue ocupando papel. */
+  aside, header, .no-print {
+    display: none !important;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -196,10 +219,11 @@ html {
     left: 0;
     top: 0;
     width: 100%;
-    padding: 2rem !important;
+    padding: 0 !important;
     margin: 0;
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     background: white !important;
   }
 }

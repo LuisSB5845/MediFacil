@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import {
   Pill, Search, ArrowLeft, FileDown, Printer, Loader2, FileText, Calendar,
+  Eye, Edit3, Trash2, Check,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -44,16 +45,26 @@ const buildPreview = (data?: RecetaRxData, fallback?: string): string => {
 export const RecetasScreen = ({
   doctorUid,
   profile,
+  onDeleteReceta,
 }: {
   doctorUid: string;
   profile: UserProfile | null;
+  /** Usa el mismo modal de confirmación que el historial médico. */
+  onDeleteReceta: (recetaId: string) => void;
 }) => {
   const [recetas, setRecetas] = useState<ClinicalDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ClinicalDocument | null>(null);
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [isExporting, setIsExporting] = useState(false);
+
+  // Borrador de edición
+  const [editPaciente, setEditPaciente] = useState('');
+  const [editFecha, setEditFecha] = useState('');
+  const [editContenido, setEditContenido] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const documentRef = useRef<HTMLDivElement>(null);
 
@@ -70,11 +81,12 @@ export const RecetasScreen = ({
     return onSnapshot(
       q,
       snapshot => {
-        setRecetas(
-          snapshot.docs
-            .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument))
-            .filter(d => d.certificationType === 'receta')
-        );
+        const docs = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument))
+          .filter(d => d.certificationType === 'receta');
+        setRecetas(docs);
+        // Si la receta abierta se borró o cambió en otra pestaña, se refleja aquí.
+        setSelected(prev => (prev ? docs.find(d => d.id === prev.id) || null : null));
         setIsLoading(false);
       },
       err => {
@@ -99,6 +111,53 @@ export const RecetasScreen = ({
 
   const selectedData = selected?.structuredData as RecetaRxData | undefined;
 
+  const openReceta = (receta: ClinicalDocument, nextMode: 'view' | 'edit') => {
+    const data = receta.structuredData as RecetaRxData | undefined;
+    setSelected(receta);
+    setMode(nextMode);
+    setError(null);
+    setEditPaciente(data?.nombrePaciente || receta.patientName || '');
+    setEditFecha(data?.fecha || '');
+    setEditContenido(data?.contenido || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selected) return;
+    if (!editPaciente.trim()) {
+      setError('Indica el nombre del paciente.');
+      return;
+    }
+    if (!editContenido.trim()) {
+      setError('La receta no puede quedar vacía.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    const data: RecetaRxData = {
+      nombrePaciente: editPaciente.trim(),
+      fecha: editFecha.trim(),
+      contenido: editContenido.trim(),
+    };
+
+    try {
+      await updateDoc(doc(db, 'clinical_documents', selected.id), {
+        structuredData: data,
+        patientName: data.nombrePaciente,
+        title: `Receta Rx - ${data.nombrePaciente}`,
+        content: JSON.stringify(data, null, 2),
+      });
+      // El onSnapshot refresca `selected`; solo cambiamos de modo.
+      setMode('view');
+    } catch (err: any) {
+      console.error('Error actualizando la receta:', err);
+      setError(err?.message || 'No se pudo guardar la receta.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleExportPDF = async () => {
     if (!documentRef.current) return;
     setIsExporting(true);
@@ -119,7 +178,7 @@ export const RecetasScreen = ({
   if (selected && selectedData) {
     return (
       <div className="p-4 md:p-10 space-y-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="no-print flex flex-wrap items-center justify-between gap-4">
           <button
             type="button"
             onClick={() => setSelected(null)}
@@ -127,7 +186,23 @@ export const RecetasScreen = ({
           >
             <ArrowLeft className="w-4 h-4" /> Volver a las recetas
           </button>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
+            <button
+              type="button"
+              onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+              className="h-11 px-5 bg-white border border-surface-container-high rounded-xl text-xs font-black flex items-center gap-2 hover:shadow-lg transition-all"
+            >
+              {mode === 'edit'
+                ? <><Eye className="w-4 h-4 text-primary" /> VER</>
+                : <><Edit3 className="w-4 h-4 text-primary" /> EDITAR</>}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeleteReceta(selected.id)}
+              className="h-11 px-5 rounded-xl bg-red-50 text-red-600 border border-red-100 text-xs font-black flex items-center gap-2 hover:bg-red-100 transition-all"
+            >
+              <Trash2 className="w-4 h-4" /> BORRAR
+            </button>
             <button
               type="button"
               onClick={handleExportPDF}
@@ -149,23 +224,87 @@ export const RecetasScreen = ({
           </div>
         </div>
 
-        <RecetaRxTemplate
-          data={selectedData}
-          documentRef={documentRef}
-          doctorName={profile?.displayName || 'Médico'}
-          specialty={profile?.specialty || ''}
-          doctorInitials={buildInitials(profile?.displayName)}
-          exequatur={profile?.exequatur}
-          doctorLogoUrl={profile?.doctorLogoUrl}
-          clinicLogoUrl={profile?.clinicLogoUrl}
-          clinicName={profile?.clinicName}
-          clinicTagline={profile?.clinicTagline}
-          clinicAddress={profile?.clinicAddress}
-          clinicSuite={profile?.clinicSuite}
-          phoneOffice={profile?.phoneOffice}
-          phoneExt={profile?.phoneExt}
-          phoneCell={profile?.phoneCell}
-        />
+        {error && (
+          <div className="no-print p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {mode === 'edit' && (
+          <div className="no-print card-atelier p-6 md:p-8 space-y-6 border border-surface-container-high">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Paciente</label>
+                <input
+                  className="input-field w-full"
+                  type="text"
+                  value={editPaciente}
+                  onChange={e => setEditPaciente(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Fecha</label>
+                <input
+                  className="input-field w-full"
+                  type="text"
+                  value={editFecha}
+                  onChange={e => setEditFecha(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Contenido de la receta</label>
+              <textarea
+                className="input-field w-full resize-none !rounded-2xl px-5 py-4 leading-relaxed"
+                rows={10}
+                value={editContenido}
+                onChange={e => setEditContenido(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => { setMode('view'); setError(null); }}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={isSaving}
+                className="btn-primary flex items-center gap-2 disabled:opacity-60"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {isSaving ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* El id es el gancho de las reglas @media print de index.css:
+            solo lo que esté aquí dentro llega al papel. */}
+        <div id="printable-document">
+          <RecetaRxTemplate
+              data={mode === 'edit'
+              ? { nombrePaciente: editPaciente, fecha: editFecha, contenido: editContenido }
+              : selectedData}
+            documentRef={documentRef}
+            doctorName={profile?.displayName || 'Médico'}
+            specialty={profile?.specialty || ''}
+            doctorInitials={buildInitials(profile?.displayName)}
+            exequatur={profile?.exequatur}
+            doctorLogoUrl={profile?.doctorLogoUrl}
+            clinicLogoUrl={profile?.clinicLogoUrl}
+            clinicName={profile?.clinicName}
+            clinicTagline={profile?.clinicTagline}
+            clinicAddress={profile?.clinicAddress}
+            clinicSuite={profile?.clinicSuite}
+            phoneOffice={profile?.phoneOffice}
+            phoneExt={profile?.phoneExt}
+            phoneCell={profile?.phoneCell}
+          />
+        </div>
       </div>
     );
   }
@@ -215,16 +354,16 @@ export const RecetasScreen = ({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filtered.map((receta, i) => {
             const data = receta.structuredData as RecetaRxData | undefined;
+            // Las recetas del modelo estructurado viejo no tienen `contenido`:
+            // se listan, pero no se abren ni se editan (solo se pueden borrar).
+            const abrible = Boolean(data?.contenido);
             return (
-              <motion.button
+              <motion.div
                 key={receta.id}
-                type="button"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                onClick={() => setSelected(receta)}
-                disabled={!data?.contenido}
-                className="card-atelier p-6 text-left space-y-4 border border-surface-container-high hover:shadow-ambient hover:border-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="card-atelier p-6 text-left space-y-4 border border-surface-container-high hover:shadow-ambient hover:border-primary/20 transition-all"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
@@ -249,7 +388,36 @@ export const RecetasScreen = ({
                 <p className="text-[10px] font-bold text-high-contrast/30 uppercase tracking-widest">
                   Emitida el {formatDate(receta.createdAt)}
                 </p>
-              </motion.button>
+
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-surface-container-low">
+                  <button
+                    type="button"
+                    onClick={() => openReceta(receta, 'view')}
+                    disabled={!abrible}
+                    title={abrible ? 'Ver receta' : 'Receta de un formato anterior: no se puede abrir'}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-[10px] shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-blue-500/20 disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Eye className="w-4 h-4" /> Ver
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openReceta(receta, 'edit')}
+                    disabled={!abrible}
+                    title={abrible ? 'Editar receta' : 'Receta de un formato anterior: no se puede editar'}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white font-black text-[10px] shadow-lg shadow-primary/30 hover:bg-primary-container hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-primary/20 disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Edit3 className="w-4 h-4" /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteReceta(receta.id)}
+                    title="Eliminar receta"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white font-black text-[10px] shadow-lg shadow-red-500/30 hover:bg-red-600 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-red-400/20"
+                  >
+                    <Trash2 className="w-4 h-4" /> Borrar
+                  </button>
+                </div>
+              </motion.div>
             );
           })}
         </div>

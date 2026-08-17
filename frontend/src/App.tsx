@@ -1313,6 +1313,21 @@ export default function App() {
     setShowDeleteConfirm(true);
   };
 
+  const handleDeleteReceta = async (recetaId: string) => {
+    setDeleteConfig({
+      message: '¿Está seguro de que desea eliminar esta receta? Esta acción no se puede deshacer.',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'clinical_documents', recetaId));
+          setShowDeleteConfirm(false);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, `clinical_documents/${recetaId}`);
+        }
+      }
+    });
+    setShowDeleteConfirm(true);
+  };
+
   if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface">
@@ -1512,7 +1527,7 @@ export default function App() {
                       />
                     } />
                     <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} />} />
-                    <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} />} />
+                    <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} onDeleteReceta={handleDeleteReceta} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
                     <Route path="/plans" element={<PaymentPlans user={profile} />} />
                     <Route path="/settings" element={<SettingsScreen user={profile} onUpdate={handleUpdateProfile} />} />
