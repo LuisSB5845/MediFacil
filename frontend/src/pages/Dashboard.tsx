@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
-import { CalendarDays, Users, History, FileText, Stethoscope, UserPlus } from 'lucide-react';
+import { CalendarDays, Users, History, FileText, Stethoscope, UserPlus, Pill } from 'lucide-react';
 import { Patient, UserProfile } from '../types';
 
 export const Dashboard = ({ 
   patients, 
   onSelectPatient, 
   onAddPatient, 
-  onNewConsultation, 
-  onStartConsultation, 
-  search, 
+  onNewConsultation,
+  onStartConsultation,
+  onQuickRx,
+  search,
   onSearchChange, 
   user, 
   setActiveTab, 
@@ -20,6 +21,7 @@ export const Dashboard = ({
   onAddPatient: () => void;
   onNewConsultation: () => void;
   onStartConsultation: (p: Patient) => void;
+  onQuickRx: () => void;
   search: string;
   onSearchChange: (s: string) => void;
   user: UserProfile | null;
@@ -223,7 +225,19 @@ export const Dashboard = ({
                 <p className="text-white/70 text-sm">Iniciar registro clínico ahora</p>
               </div>
             </button>
-            <button 
+            <button
+              onClick={onQuickRx}
+              className="group flex items-center gap-6 p-6 bg-surface-container-lowest border border-outline-variant rounded-xl text-on-surface shadow-sm hover:shadow-md transition-all hover:-translate-y-1"
+            >
+              <div className="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Pill className="w-8 h-8 text-secondary" />
+              </div>
+              <div className="text-left">
+                <h4 className="text-xl font-bold">Receta Rápida</h4>
+                <p className="text-on-surface-variant text-sm">Emitir Rx en segundos con IA</p>
+              </div>
+            </button>
+            <button
               onClick={onAddPatient}
               className="group flex items-center gap-6 p-6 bg-surface-container-lowest border border-outline-variant rounded-xl text-on-surface shadow-sm hover:shadow-md transition-all hover:-translate-y-1"
             >

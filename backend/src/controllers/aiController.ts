@@ -6,13 +6,13 @@ import { db } from '../config/firebase.js';
 import logger from '../utils/logger.js';
 import { sendDiscordAlert } from '../utils/alerts.js';
 import { AI_LIMITS } from '../middlewares/auth.js';
-import { NarrativeCertificationSchema, BirthCertificationSchema } from '../schemas/certificationSchemas.js';
+import { CERT_REGISTRY, CERTIFICATION_TYPES, type CertificationType } from '../schemas/certificationSchemas.js';
 
 export const AISchema = z.object({
   body: z.object({
     prompt: z.string().min(1).max(5000),
     context: z.string().optional(),
-    certificationType: z.enum(['narrative', 'birth']).optional(),
+    certificationType: z.enum(CERTIFICATION_TYPES).optional(),
   }),
 });
 
@@ -302,18 +302,19 @@ export const generateCertification = async (req: express.Request, res: express.R
   logger.info(`Generando certificación estructurada (${certificationType}) para usuario: ${userId}`);
 
   try {
-    const targetSchema = certificationType === 'birth' 
-      ? BirthCertificationSchema 
-      : NarrativeCertificationSchema;
+    const entry = CERT_REGISTRY[certificationType as CertificationType];
 
-    const systemPrompt = certificationType === 'birth'
-      ? `Eres un asistente médico experto en extracción y formalización de certificaciones y constancias de nacimiento. Extrae e infiere los datos requeridos cumpliendo estrictamente con los campos descritos en el esquema.`
-      : `Eres un asistente médico experto en la emisión de certificados médicos narrativos. Extrae e infiere la información requerida cumpliendo con el esquema.`;
+    if (!entry) {
+      return res.status(400).json({
+        error: `Tipo de documento no soportado: '${certificationType}'.`,
+        supported: CERTIFICATION_TYPES,
+      });
+    }
 
     const result = await generateObject({
       model: model,
-      schema: targetSchema,
-      system: systemPrompt,
+      schema: entry.schema,
+      system: entry.systemPrompt,
       prompt: `Información clínica / contexto del médico:\n${context || 'No especificada'}\n\nInstrucción o datos del documento dictados:\n"${prompt}"`,
     });
 

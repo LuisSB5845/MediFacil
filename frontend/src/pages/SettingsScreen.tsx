@@ -27,12 +27,12 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
     else setUploadingDoctorLogo(true);
 
     try {
-      const url = await uploadLogoImage(file, user.uid, type);
-      if (type === 'clinic') {
-        setFormData(prev => ({ ...prev, clinicLogoUrl: url }));
-      } else {
-        setFormData(prev => ({ ...prev, doctorLogoUrl: url }));
-      }
+      // Devuelve un data URI Base64 comprimido (300x300 JPEG). No hay Storage:
+      // el string se guarda directamente en el documento del usuario.
+      const dataUri = await uploadLogoImage(file, user.uid, type);
+      const field = type === 'clinic' ? 'clinicLogoUrl' : 'doctorLogoUrl';
+      setFormData(prev => ({ ...prev, [field]: dataUri }));
+      onUpdate({ [field]: dataUri });
     } catch (err: any) {
       console.error(`Error al subir logo de ${type}:`, err);
       setUploadError(err.message || 'Error al subir la imagen.');
@@ -44,11 +44,9 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
   };
 
   const handleRemoveLogo = (type: 'clinic' | 'doctor') => {
-    if (type === 'clinic') {
-      setFormData(prev => ({ ...prev, clinicLogoUrl: '' }));
-    } else {
-      setFormData(prev => ({ ...prev, doctorLogoUrl: '' }));
-    }
+    const field = type === 'clinic' ? 'clinicLogoUrl' : 'doctorLogoUrl';
+    setFormData(prev => ({ ...prev, [field]: '' }));
+    onUpdate({ [field]: '' });
   };
 
   return (
@@ -342,7 +340,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
               </div>
               <div>
                 <h3 className="title-atelier text-primary">Branding Visual & Logos Institucionales</h3>
-                <p className="text-xs text-high-contrast/50 mt-0.5">Formatos permitidos: PNG, JPG, SVG. Tamaño máximo: 2MB por imagen.</p>
+                <p className="text-xs text-high-contrast/50 mt-0.5">Formatos permitidos: PNG, JPG, SVG (máx. 2MB). La imagen se optimiza automáticamente a 300x300px y se guarda en tu perfil.</p>
               </div>
             </div>
 
@@ -390,7 +388,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                     </div>
                     <div>
                       <p className="text-xs font-bold text-primary">Cargar Logo Clínica</p>
-                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG (máx 2MB)</p>
+                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG · se optimiza a 300x300px</p>
                     </div>
                     <button 
                       type="button"
@@ -398,7 +396,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                       onClick={() => clinicLogoInputRef.current?.click()}
                       className="btn-secondary py-2 px-4 text-xs"
                     >
-                      {uploadingClinicLogo ? "Subiendo..." : "Seleccionar Archivo"}
+                      {uploadingClinicLogo ? "Procesando..." : "Seleccionar Archivo"}
                     </button>
                   </div>
                 )}
@@ -446,7 +444,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                     </div>
                     <div>
                       <p className="text-xs font-bold text-secondary">Cargar Logo/Sello Personal</p>
-                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG (máx 2MB)</p>
+                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG · se optimiza a 300x300px</p>
                     </div>
                     <button 
                       type="button"
@@ -454,7 +452,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                       onClick={() => doctorLogoInputRef.current?.click()}
                       className="btn-secondary py-2 px-4 text-xs"
                     >
-                      {uploadingDoctorLogo ? "Subiendo..." : "Seleccionar Archivo"}
+                      {uploadingDoctorLogo ? "Procesando..." : "Seleccionar Archivo"}
                     </button>
                   </div>
                 )}

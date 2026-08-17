@@ -91,6 +91,7 @@ import {
   PenTool,
   CreditCard,
   FolderOpen,
+  Pill,
   Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -790,6 +791,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Pacientes', icon: Users },
     { id: 'generate', label: 'Generar Documento', icon: FileText },
+    { id: 'recetas', label: 'Recetas', icon: Pill },
     { id: 'assistant', label: 'Asistente de IA', icon: Bot },
     { id: 'plans', label: 'Planes de Pago', icon: CreditCard },
     ...(isAdmin ? [{ id: 'admin', label: 'Gestión de Usuarios', icon: ShieldCheck }] : []),
@@ -949,6 +951,8 @@ import { Dashboard } from './pages/Dashboard';
 import { SettingsScreen } from './pages/SettingsScreen';
 import { AdminPanel } from './pages/AdminPanel';
 import { ConsultationSearchModal } from './components/ConsultationSearchModal';
+import { RecetaRapidaModal } from './components/RecetaRapidaModal';
+import { RecetasScreen } from './pages/RecetasScreen';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -966,6 +970,7 @@ export default function App() {
   const [showEditPatient, setShowEditPatient] = useState(false);
   const [showPatientSearchModal, setShowPatientSearchModal] = useState(false);
   const [showConsultationSearchModal, setShowConsultationSearchModal] = useState(false);
+  const [showRecetaRapida, setShowRecetaRapida] = useState(false);
   const [showViewConsultation, setShowViewConsultation] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1341,15 +1346,23 @@ export default function App() {
                 ? "Dashboard" 
                 : activeTab === 'patients'
                   ? "Pacientes"
-                : activeTab === 'generate' 
-                  ? "Generar Documento" 
-                  : activeTab === 'assistant' 
+                : activeTab === 'generate'
+                  ? "Generar Documento"
+                  : activeTab === 'recetas'
+                  ? "Recetas"
+                  : activeTab === 'assistant'
                     ? "Asistente de IA" 
                     : activeTab === 'plans'
                       ? "Planes de Pago"
                       : "Configuración"
           } 
-          subtitle={selectedPatient ? selectedPatient.name : undefined}
+          subtitle={
+            selectedPatient
+              ? selectedPatient.name
+              : activeTab === 'recetas'
+                ? "Historial de recetas emitidas"
+                : undefined
+          }
           search={search}
           onSearchChange={setSearch}
           setActiveTab={setActiveTab}
@@ -1445,6 +1458,7 @@ export default function App() {
                           });
                           setShowAddConsultation(true);
                         }}
+                        onQuickRx={() => setShowRecetaRapida(true)}
                         search={search}
                         onSearchChange={setSearch}
                         user={profile}
@@ -1498,6 +1512,7 @@ export default function App() {
                       />
                     } />
                     <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} />} />
+                    <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
                     <Route path="/plans" element={<PaymentPlans user={profile} />} />
                     <Route path="/settings" element={<SettingsScreen user={profile} onUpdate={handleUpdateProfile} />} />
@@ -1976,6 +1991,15 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+
+        {showRecetaRapida && user && (
+          <RecetaRapidaModal
+            patients={patients}
+            profile={profile}
+            doctorUid={user.uid}
+            onClose={() => setShowRecetaRapida(false)}
+          />
         )}
 
         {showConsultationSearchModal && selectedPatient && (

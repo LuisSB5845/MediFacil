@@ -64,10 +64,17 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       collection(db, 'clinical_documents'),
       where('doctorUid', '==', user.uid),
       orderBy('createdAt', 'desc'),
-      limit(5)
+      // Se piden de más porque las recetas se descartan abajo y este generador
+      // debe seguir mostrando 5 documentos propios.
+      limit(20)
     );
     return onSnapshot(q, (snapshot) => {
-      setRecentDocuments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument)));
+      const docs = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument))
+        // Las recetas Rx tienen su propio flujo (Receta Rápida) y no se abren aquí.
+        .filter(doc => doc.certificationType !== 'receta')
+        .slice(0, 5);
+      setRecentDocuments(docs);
     });
   }, [user]);
 
@@ -362,7 +369,9 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       setView('ai');
       setGeneratedDocContent(doc.content || '');
       setStructuredData(doc.structuredData || null);
-      setCertificationType(doc.certificationType || 'narrative');
+      // Este generador solo maneja 'narrative' y 'birth'; otros tipos (ej. 'receta',
+      // emitido desde la Receta Rápida del dashboard) caen a 'narrative'.
+      setCertificationType(doc.certificationType === 'birth' ? 'birth' : 'narrative');
     }
   };
 
