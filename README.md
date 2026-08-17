@@ -56,7 +56,6 @@
 | `VITE_FIREBASE_API_KEY` | API Key pública del cliente Firebase | `TU_FIREBASE_API_KEY_AQUI` |
 | `VITE_FIREBASE_AUTH_DOMAIN` | Dominio de autenticación de Firebase | `tu-proyecto.firebaseapp.com` |
 | `VITE_FIREBASE_PROJECT_ID` | ID del proyecto en Firebase | `tu-proyecto-id` |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket de almacenamiento de Firebase | `tu-proyecto.appspot.com` |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Sender ID de Firebase Messaging | `1234567890` |
 | `VITE_FIREBASE_APP_ID` | App ID web de Firebase | `1:1234567890:web:abc123def` |
 

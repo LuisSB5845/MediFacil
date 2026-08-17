@@ -102,6 +102,15 @@ export interface NarrativeCertificationData {
   date: string;
 }
 
+export interface RecetaRxData {
+  nombrePaciente: string;
+  fecha: string;
+  /** Cuerpo de la receta en texto libre, tal cual lo escribió el doctor. */
+  contenido: string;
+}
+
+export type CertificationType = 'narrative' | 'birth' | 'receta';
+
 export interface ClinicalDocument {
   id: string;
   title: string;
@@ -111,8 +120,8 @@ export interface ClinicalDocument {
   patientName?: string;
   createdAt: any;
   content: string;
-  structuredData?: NarrativeCertificationData | BirthCertificationData;
-  certificationType?: 'narrative' | 'birth';
+  structuredData?: NarrativeCertificationData | BirthCertificationData | RecetaRxData;
+  certificationType?: CertificationType;
   templateType?: string;
 }
 
