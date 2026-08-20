@@ -45,19 +45,26 @@ export const RecetaRxTemplate = ({
   phoneCell,
   documentRef,
 }: Props) => {
+  // Proporción real de una hoja carta (8.5x11" a 96dpi = 816x1056px), para que
+  // lo que se ve en pantalla sea lo que sale en papel, sin reescalados.
   return (
     <div
       ref={documentRef}
-      className="bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1050px] w-full"
+      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] w-full max-w-[816px] mx-auto"
     >
       {/* Encabezado — logo personal + nombre + especialidad, centrado, estilo recetario físico */}
       <div className="flex flex-col items-center text-center gap-2 pb-6 shrink-0">
-        <div className="flex items-center gap-4">
+        <div className="w-full flex items-center justify-center">
           {doctorLogoUrl ? (
             // El logo personal ya trae el nombre estilizado: no se duplica en texto.
-            <img src={doctorLogoUrl} alt={doctorName} className="h-16 w-auto object-contain" />
+            // Ocupa casi todo el ancho útil, como en el recetario impreso.
+            <img
+              src={doctorLogoUrl}
+              alt={doctorName}
+              className="w-auto h-auto max-w-[85%] max-h-[150px] object-contain"
+            />
           ) : (
-            <h1 className="text-3xl font-black text-primary italic tracking-tight">{doctorName}</h1>
+            <h1 className="text-3xl font-black text-[#B4524C] italic tracking-tight">{doctorName}</h1>
           )}
         </div>
         <p className="text-[11px] font-bold text-high-contrast/70 uppercase tracking-wide leading-relaxed max-w-lg">
@@ -71,11 +78,11 @@ export const RecetaRxTemplate = ({
           {/* Iniciales del doctor, centradas arriba del marco interno */}
           {doctorInitials && (
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-white px-4">
-              <span className="text-xl font-black text-primary italic">{doctorInitials}</span>
+              <span className="text-xl font-black text-[#B4524C] italic">{doctorInitials}</span>
             </div>
           )}
           {/* Símbolo Rx, esquina superior izquierda */}
-          <span className="absolute top-2 left-4 text-4xl font-black text-primary italic">
+          <span className="absolute top-2 left-4 text-4xl font-black text-[#B4524C] italic">
             R<sub className="text-2xl">x</sub>
           </span>
 
@@ -87,7 +94,7 @@ export const RecetaRxTemplate = ({
 
           {/* Cuerpo — texto libre del doctor, con los saltos de línea intactos */}
           <div className="px-2">
-            <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap">
+            <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {data.contenido}
             </p>
           </div>

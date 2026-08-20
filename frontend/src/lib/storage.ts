@@ -1,10 +1,22 @@
 export type LogoType = 'clinic' | 'doctor';
 
-/** Dimensiones máximas del logo ya comprimido. */
+/**
+ * Dimensiones máximas del logo ya comprimido.
+ * El logo del médico encabeza la receta a buen tamaño, así que necesita más
+ * resolución; el de la clínica solo aparece pequeño en el pie.
+ */
 export const LOGO_MAX_WIDTH = 300;
 export const LOGO_MAX_HEIGHT = 300;
+export const DOCTOR_LOGO_MAX_WIDTH = 600;
+export const DOCTOR_LOGO_MAX_HEIGHT = 600;
 /** Calidad de reexportación JPEG. */
 export const LOGO_QUALITY = 0.7;
+/**
+ * Si a 600x600 el logo del médico no cabe en el presupuesto de bytes, se baja
+ * la calidad JPEG antes que la resolución: preferimos algo de artefacto de
+ * compresión a un logo pixelado.
+ */
+export const LOGO_QUALITY_FALLBACKS = [0.6, 0.5, 0.4];
 /**
  * Límite del data URI resultante. Firestore permite ~1MB por documento;
  * dejamos margen para el resto de los campos del perfil.
@@ -83,12 +95,13 @@ export function resizeAndCompressImage(
 
 /**
  * Prepara el logo de la clínica o del médico para guardarlo en Firestore.
- * Valida el archivo, lo comprime a 300x300 JPEG y devuelve el data URI.
+ * Valida el archivo, lo comprime a JPEG (600x600 el del médico, 300x300 el de
+ * la clínica) y devuelve el data URI.
  */
 export async function uploadLogoImage(
   file: File,
   doctorUid: string,
-  _type: LogoType
+  type: LogoType
 ): Promise<string> {
   if (!doctorUid) {
     throw new Error('Identificador de usuario no válido.');
@@ -118,10 +131,21 @@ export async function uploadLogoImage(
   }
 
   // 3. Comprimir en el navegador (sin Firebase Storage)
-  const dataUri = await resizeAndCompressImage(file, LOGO_MAX_WIDTH, LOGO_MAX_HEIGHT, LOGO_QUALITY);
+  const isDoctor = type === 'doctor';
+  const maxWidth = isDoctor ? DOCTOR_LOGO_MAX_WIDTH : LOGO_MAX_WIDTH;
+  const maxHeight = isDoctor ? DOCTOR_LOGO_MAX_HEIGHT : LOGO_MAX_HEIGHT;
 
-  // 4. Verificar que quepa cómodamente en el documento de Firestore
-  const byteSize = getDataUriByteSize(dataUri);
+  // 4. Ajustar hasta que quepa en el documento de Firestore. La resolución se
+  // mantiene: lo que cede es la calidad JPEG.
+  let dataUri = await resizeAndCompressImage(file, maxWidth, maxHeight, LOGO_QUALITY);
+  let byteSize = getDataUriByteSize(dataUri);
+
+  for (const quality of LOGO_QUALITY_FALLBACKS) {
+    if (byteSize <= MAX_DATA_URI_BYTES) break;
+    dataUri = await resizeAndCompressImage(file, maxWidth, maxHeight, quality);
+    byteSize = getDataUriByteSize(dataUri);
+  }
+
   if (byteSize > MAX_DATA_URI_BYTES) {
     throw new Error(
       `La imagen comprimida sigue pesando ${(byteSize / 1024).toFixed(0)}KB y supera el límite de 700KB. ` +

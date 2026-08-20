@@ -37,6 +37,14 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { createChat, analyzeMedicalImage, generateStructuredCertification } from '../lib/ai';
 import { CertificateRenderer } from './templates/CertificateRenderer';
+import { CertificadoMedicoTemplate } from './templates/CertificadoMedicoTemplate';
+import { ConstanciaNacimientoTemplate } from './templates/ConstanciaNacimientoTemplate';
+import {
+  PresupuestoMedicoTemplate,
+  formatearMonto,
+  totalPresupuesto,
+  type ProcedimientoPresupuesto,
+} from './templates/PresupuestoMedicoTemplate';
 import mammoth from 'mammoth';
 import * as pdfjs from 'pdfjs-dist';
 
@@ -45,6 +53,19 @@ import * as pdfjs from 'pdfjs-dist';
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
 type DocView = 'selection' | 'template' | 'ai';
+
+/** Las tres plantillas membretadas de la consulta. */
+type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto';
+
+/** Estilos compartidos por los campos de las plantillas. */
+const LBL = 'text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1';
+const INPUT = 'w-full h-14 px-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white';
+
+const PLANTILLAS: { id: PlantillaId; label: string }[] = [
+  { id: 'certificado', label: 'Certificado Médico' },
+  { id: 'nacimiento', label: 'Constancia de Nacimiento' },
+  { id: 'presupuesto', label: 'Presupuesto Médico' },
+];
 
 export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
   const [view, setView] = useState<DocView>('selection');
@@ -72,25 +93,67 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       const docs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument))
         // Las recetas Rx tienen su propio flujo (Receta Rápida) y no se abren aquí.
-        .filter(doc => doc.certificationType !== 'receta')
+        .filter(doc => doc.certificationType !== 'receta' && doc.certificationType !== 'orden_lab')
         .slice(0, 5);
       setRecentDocuments(docs);
     });
   }, [user]);
 
-  // Template Form State
-  const [formData, setFormData] = useState({
-    type: 'Certificado Médico',
-    patientName: 'Alejandro González R.',
-    diagnosis: 'Faringoamigdalitis aguda bacteriana con compromiso de nódulos linfáticos cervicales...',
-    restDays: '3',
-    dateFrom: '05/24/2026',
-    dateTo: '05/31/2026',
-    observations: 'Reposo absoluto por 72 horas. Abundante ingesta de líquidos.'
+  // --- Plantillas: las tres del papel membretado de la consulta ---
+  const hoy = new Date().toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const [plantilla, setPlantilla] = useState<PlantillaId>('certificado');
+
+  // Certificado médico narrativo
+  const [certPaciente, setCertPaciente] = useState('');
+  const [certFecha, setCertFecha] = useState(hoy);
+  const [certCuerpo, setCertCuerpo] = useState('');
+
+  // Constancia de nacimiento
+  const [nac, setNac] = useState({
+    nombreMadre: '',
+    cedulaMadre: '',
+    sexoProducto: 'Masculino',
+    peso: '',
+    hora: '',
+    dia: '',
+    mes: '',
+    anio: String(new Date().getFullYear()),
+    medicoTratante: '',
+    fechaExpedicion: hoy,
   });
 
-  const [patients, setPatients] = useState<any[]>([]);
-  const [showPatientSearch, setShowPatientSearch] = useState(false);
+  // Presupuesto médico
+  const [presCedula, setPresCedula] = useState('');
+  const [presPaciente, setPresPaciente] = useState('');
+  const [presFecha, setPresFecha] = useState(hoy);
+  const [presDiagnostico, setPresDiagnostico] = useState('');
+  const [procedimientos, setProcedimientos] = useState<ProcedimientoPresupuesto[]>([
+    { descripcion: '', monto: 0 },
+  ]);
+
+  const certData = { paciente: certPaciente, fecha: certFecha, cuerpo: certCuerpo };
+  const nacData = { ...nac, medicoTratante: nac.medicoTratante || profile?.displayName || '' };
+  const presData = {
+    cedulaPaciente: presCedula,
+    nombrePaciente: presPaciente,
+    fecha: presFecha,
+    medicoTratante: profile?.displayName || '',
+    diagnostico: presDiagnostico,
+    procedimientos,
+  };
+
+  /** Nombre de paciente y contenido con los que se guarda cada plantilla. */
+  const resumenPlantilla = () => {
+    if (plantilla === 'certificado') {
+      return { paciente: certPaciente, contenido: certCuerpo, data: certData };
+    }
+    if (plantilla === 'nacimiento') {
+      return { paciente: nacData.nombreMadre, contenido: JSON.stringify(nacData, null, 2), data: nacData };
+    }
+    return { paciente: presPaciente, contenido: JSON.stringify(presData, null, 2), data: presData };
+  };
+
 
   // AI Assistant State
   const [aiPrompt, setAiPrompt] = useState('');
@@ -102,21 +165,6 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   const [structuredData, setStructuredData] = useState<any | null>(null);
 
 
-  // Búsqueda de pacientes
-  useEffect(() => {
-    if (formData.patientName.length > 2 && showPatientSearch) {
-      const fetchPatients = async () => {
-        const q = query(
-          collection(db, 'patients'),
-          where('doctorUid', '==', user?.uid),
-          limit(5)
-        );
-        const snap = await getDocs(q);
-        setPatients(snap.docs.map(d => d.data()));
-      };
-      fetchPatients();
-    }
-  }, [formData.patientName, showPatientSearch, user]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -209,15 +257,18 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
         // ... (resto del código de plantilla idéntico)
         if (user) {
           console.log("DocumentGenerator: Saving template document...");
+          const etiqueta = PLANTILLAS.find(p => p.id === plantilla)?.label || 'Documento';
+          const resumen = resumenPlantilla();
           await addDoc(collection(db, 'clinical_documents'), {
-            title: `${formData.type} - ${formData.patientName}`,
-            subtitle: `Generado hoy • Plantilla: ${formData.type}`,
+            title: `${etiqueta} - ${resumen.paciente || 'Paciente'}`,
+            subtitle: `Generado hoy • Plantilla: ${etiqueta}`,
             type: 'template',
             doctorUid: user.uid,
-            patientName: formData.patientName,
+            patientName: resumen.paciente,
             createdAt: serverTimestamp(),
-            content: formData.diagnosis,
-            templateType: formData.type
+            content: resumen.contenido,
+            structuredData: resumen.data,
+            templateType: etiqueta
           });
           console.log("DocumentGenerator: Template document saved.");
         }
@@ -359,12 +410,28 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
     setSelectedDoc(doc);
     if (doc.type === 'template') {
       setView('template');
-      setFormData({
-        ...formData,
-        type: doc.templateType || 'Certificado Médico',
-        patientName: doc.patientName || '',
-        diagnosis: doc.content
-      });
+      // Reabre la plantilla con la que se creó y repuebla sus campos.
+      const guardado: any = doc.structuredData || {};
+      if (doc.templateType === 'Constancia de Nacimiento') {
+        setPlantilla('nacimiento');
+        setNac(prev => ({ ...prev, ...guardado }));
+      } else if (doc.templateType === 'Presupuesto Médico') {
+        setPlantilla('presupuesto');
+        setPresCedula(guardado.cedulaPaciente || '');
+        setPresPaciente(guardado.nombrePaciente || doc.patientName || '');
+        setPresFecha(guardado.fecha || hoy);
+        setPresDiagnostico(guardado.diagnostico || '');
+        setProcedimientos(
+          Array.isArray(guardado.procedimientos) && guardado.procedimientos.length > 0
+            ? guardado.procedimientos
+            : [{ descripcion: '', monto: 0 }]
+        );
+      } else {
+        setPlantilla('certificado');
+        setCertPaciente(guardado.paciente || doc.patientName || '');
+        setCertFecha(guardado.fecha || hoy);
+        setCertCuerpo(guardado.cuerpo || doc.content || '');
+      }
     } else {
       setView('ai');
       setGeneratedDocContent(doc.content || '');
@@ -489,7 +556,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             {view === 'template' ? (
               <div className="flex-1 flex overflow-hidden">
                 {/* Template Config Left */}
-                <div className="w-[480px] bg-white border-r border-surface-container-high overflow-y-auto no-scrollbar p-12 space-y-12">
+                <div className="w-[560px] shrink-0 bg-white border-r border-surface-container-high overflow-y-auto no-scrollbar p-10 space-y-12">
                   <div className="space-y-6">
                     <button 
                       onClick={() => setView('selection')} 
@@ -506,78 +573,194 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
 
                   <div className="space-y-10">
                     <div className="space-y-3">
-                      <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Tipo de documento</label>
+                      <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Plantilla</label>
                       <div className="relative group">
-                        <select 
+                        <select
                           className="w-full h-14 pl-5 pr-12 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-black appearance-none focus:outline-none focus:border-primary transition-all group-hover:bg-white"
-                          value={formData.type}
-                          onChange={(e) => setFormData({...formData, type: e.target.value})}
+                          value={plantilla}
+                          onChange={(e) => setPlantilla(e.target.value as PlantillaId)}
                         >
-                          <option>Certificado Médico</option>
-                          <option>Reposo Médico</option>
-                          <option>Referimiento</option>
-                          <option>Carta de Constancia</option>
+                          {PLANTILLAS.map(p => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
                         </select>
                         <ChevronDown className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-high-contrast/20 pointer-events-none" />
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Paciente</label>
-                      <div className="relative">
-                        <UserIcon className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-high-contrast/20" />
-                        <input 
-                          type="text"
-                          placeholder="Buscar paciente..."
-                          className="w-full h-14 pl-14 pr-4 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white"
-                          value={formData.patientName}
-                          onChange={(e) => setFormData({...formData, patientName: e.target.value})}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Diagnóstico / Motivo</label>
-                      <textarea 
-                        placeholder="Ingresa el diagnóstico médico..." 
-                        className="w-full h-36 p-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-medium focus:outline-none focus:border-primary transition-all resize-none leading-relaxed hover:bg-white" 
-                        value={formData.diagnosis} 
-                        onChange={(e) => setFormData({...formData, diagnosis: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-5">
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Fecha Emisión</label>
-                        <div className="relative">
-                          <input type="text" className="w-full h-14 px-4 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold hover:bg-white" value={formData.dateFrom} />
-                          <Calendar className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+                    {/* --- Certificado Medico: paciente, fecha y cuerpo narrativo --- */}
+                    {plantilla === 'certificado' && (
+                      <div className="space-y-8">
+                        <div className="space-y-3">
+                          <label className={LBL}>Paciente</label>
+                          <div className="relative">
+                            <UserIcon className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+                            <input
+                              type="text"
+                              placeholder="Nombre del paciente"
+                              className={INPUT + ' pl-14'}
+                              value={certPaciente}
+                              onChange={(e) => setCertPaciente(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Fecha</label>
+                          <input type="text" className={INPUT} value={certFecha} onChange={(e) => setCertFecha(e.target.value)} />
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Cuerpo del certificado</label>
+                          <textarea
+                            placeholder="Se trata de paciente de 31 años de edad, ID 000-0000000-0, la cual llega vía Emergencia..."
+                            className="w-full h-80 px-6 py-5 bg-white border border-surface-container-high rounded-2xl text-base font-medium text-high-contrast text-justify leading-[2] focus:outline-none focus:border-primary transition-all resize-y break-words [overflow-wrap:anywhere]"
+                            value={certCuerpo}
+                            onChange={(e) => setCertCuerpo(e.target.value)}
+                          />
+                          <p className="text-[11px] text-high-contrast/40 px-1">
+                            Se escribe con la misma tipografía y márgenes del documento: lo que ves aquí es lo que sale impreso.
+                          </p>
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Vigencia</label>
-                        <div className="relative">
-                          <input type="text" className="w-full h-14 px-4 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold hover:bg-white" value={formData.dateTo} placeholder="00/00/00" />
-                          <Calendar className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+                    )}
+
+                    {/* --- Constancia de Nacimiento: un campo por renglon del formulario --- */}
+                    {plantilla === 'nacimiento' && (
+                      <div className="space-y-6">
+                        <div className="space-y-3">
+                          <label className={LBL}>Certificamos que la Sra.</label>
+                          <input type="text" className={INPUT} value={nac.nombreMadre} onChange={(e) => setNac({ ...nac, nombreMadre: e.target.value })} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <label className={LBL}>Cedula</label>
+                            <input type="text" placeholder="000-0000000-0" className={INPUT} value={nac.cedulaMadre} onChange={(e) => setNac({ ...nac, cedulaMadre: e.target.value })} />
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Producto</label>
+                            <select className={INPUT} value={nac.sexoProducto} onChange={(e) => setNac({ ...nac, sexoProducto: e.target.value })}>
+                              <option>Masculino</option>
+                              <option>Femenino</option>
+                            </select>
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Peso</label>
+                            <input type="text" placeholder="6 Lbs y media" className={INPUT} value={nac.peso} onChange={(e) => setNac({ ...nac, peso: e.target.value })} />
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Hora</label>
+                            <input type="text" placeholder="7:40 AM" className={INPUT} value={nac.hora} onChange={(e) => setNac({ ...nac, hora: e.target.value })} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-3">
+                            <label className={LBL}>Dia</label>
+                            <input type="text" className={INPUT} value={nac.dia} onChange={(e) => setNac({ ...nac, dia: e.target.value })} />
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Mes</label>
+                            <input type="text" placeholder="JULIO" className={INPUT} value={nac.mes} onChange={(e) => setNac({ ...nac, mes: e.target.value })} />
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Anio</label>
+                            <input type="text" className={INPUT} value={nac.anio} onChange={(e) => setNac({ ...nac, anio: e.target.value })} />
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Medico tratante</label>
+                          <input type="text" placeholder={profile?.displayName || 'Dra. Isabel Beato'} className={INPUT} value={nac.medicoTratante} onChange={(e) => setNac({ ...nac, medicoTratante: e.target.value })} />
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Fecha de expedicion</label>
+                          <input type="text" className={INPUT} value={nac.fechaExpedicion} onChange={(e) => setNac({ ...nac, fechaExpedicion: e.target.value })} />
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Observaciones</label>
-                      <textarea 
-                        placeholder="Notas adicionales..." 
-                        className="w-full h-28 p-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-medium focus:outline-none focus:border-primary transition-all resize-none leading-relaxed hover:bg-white" 
-                        value={formData.observations} 
-                        onChange={(e) => setFormData({...formData, observations: e.target.value})} 
-                      />
-                    </div>
+                    {/* --- Presupuesto: diagnostico y procedimientos con monto --- */}
+                    {plantilla === 'presupuesto' && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <label className={LBL}>Cedula / ID</label>
+                            <input type="text" className={INPUT} value={presCedula} onChange={(e) => setPresCedula(e.target.value)} />
+                          </div>
+                          <div className="space-y-3">
+                            <label className={LBL}>Fecha</label>
+                            <input type="text" className={INPUT} value={presFecha} onChange={(e) => setPresFecha(e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Paciente</label>
+                          <input type="text" className={INPUT} value={presPaciente} onChange={(e) => setPresPaciente(e.target.value)} />
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Diagnostico</label>
+                          <textarea
+                            placeholder="Rectocistocele grado II-III, Quiste de ovario derecho..."
+                            className="w-full h-28 p-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-medium focus:outline-none focus:border-primary transition-all resize-none leading-relaxed hover:bg-white"
+                            value={presDiagnostico}
+                            onChange={(e) => setPresDiagnostico(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className={LBL}>Procedimientos propuestos</label>
+                            <button
+                              type="button"
+                              onClick={() => setProcedimientos(prev => [...prev, { descripcion: '', monto: 0 }])}
+                              className="text-primary text-xs font-bold hover:underline"
+                            >
+                              + Agregar
+                            </button>
+                          </div>
+                          <div className="space-y-3">
+                            {procedimientos.map((proc, i) => (
+                              <div key={i} className="p-4 bg-surface-low rounded-2xl border border-surface-container-high space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black text-primary uppercase tracking-widest">#{i + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setProcedimientos(prev => prev.length === 1 ? [{ descripcion: '', monto: 0 }] : prev.filter((_, j) => j !== i))}
+                                    className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                                    title="Eliminar procedimiento"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <textarea
+                                  placeholder="Corpoperineorrafia anterior y posterior..."
+                                  className="w-full h-20 p-3 bg-white border border-surface-container-high rounded-xl text-sm font-medium focus:outline-none focus:border-primary resize-none leading-relaxed"
+                                  value={proc.descripcion}
+                                  onChange={(e) => setProcedimientos(prev => prev.map((p, j) => j === i ? { ...p, descripcion: e.target.value } : p))}
+                                />
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-high-contrast/40">RD$</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder="12000"
+                                    className="flex-1 h-11 px-4 bg-white border border-surface-container-high rounded-xl text-sm font-bold focus:outline-none focus:border-primary"
+                                    value={proc.monto || ''}
+                                    onChange={(e) => setProcedimientos(prev => prev.map((p, j) => j === i ? { ...p, monto: Number(e.target.value) || 0 } : p))}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between items-center pt-2 px-1">
+                            <span className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest">Total</span>
+                            <span className="text-sm font-black text-primary">{formatearMonto(totalPresupuesto(procedimientos))}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-8">
                     <button 
                       onClick={handleGenerate}
-                      disabled={isGenerating || !formData.patientName}
+                      disabled={isGenerating || !resumenPlantilla().paciente.trim()}
                       className="w-full h-16 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/20 disabled:opacity-50"
                     >
                       <div className="relative">
@@ -607,58 +790,16 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                       </div>
                     </div>
 
-                    <div className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-24 relative flex flex-col min-h-[1200px]" ref={documentRef}>
-                       {/* Document Header */}
-                       <div className="flex justify-between items-start border-b-2 border-primary/5 pb-14 mb-20">
-                         <div className="flex items-center gap-10">
-                            <div className="w-24 h-24 bg-primary/5 rounded-[2.5rem] border border-primary/10 flex items-center justify-center text-primary shadow-sm">
-                               <BriefcaseMedical className="w-12 h-12" />
-                            </div>
-                            <div>
-                              <h2 className="text-3xl font-black text-primary leading-tight">Dra. {profile?.displayName || 'Isabel Beato'}</h2>
-                              <p className="text-xs font-bold text-high-contrast/50 uppercase tracking-[0.2em] mt-1.5">{profile?.specialty || 'Especialista en Medicina Interna'}</p>
-                              <div className="space-y-0.5 mt-3">
-                                <p className="text-[10px] font-black text-high-contrast/20 uppercase tracking-widest">Cédula Profesional: 72549103 | Reg. SSA: 55432</p>
-                                <p className="text-[10px] font-black text-high-contrast/20 uppercase tracking-widest">Universidad Autónoma de México</p>
-                              </div>
-                            </div>
-                         </div>
-                         <div className="text-right space-y-1">
-                            <p className="text-sm font-black text-high-contrast/80 uppercase tracking-widest leading-relaxed">MediFácil Hospital Arcos</p>
-                            <p className="text-[10px] font-medium text-high-contrast/40 leading-relaxed">Av. Santa Fe 482, Piso 12</p>
-                            <p className="text-[10px] font-medium text-high-contrast/40 leading-relaxed">CDMX, CP 05348</p>
-                            <p className="text-[10px] font-medium text-high-contrast/40 leading-relaxed">Tel: (55) 8842-1000</p>
-                         </div>
-                      </div>
-
-                      <div className="flex-1">
-                        <div className="space-y-20">
-                          <div className="text-center relative">
-                            <h1 className="text-4xl font-black text-primary tracking-[0.5em] uppercase">{formData.type}</h1>
-                            <div className="w-32 h-1 bg-primary/10 mx-auto mt-8" />
-                          </div>
-                          <div className="space-y-14 text-high-contrast leading-[2.2] text-justify text-xl font-medium px-4">
-                            <p className="text-2xl font-black tracking-tight">A QUIEN CORRESPONDA:</p>
-                            <p>
-                              Por medio de la presente, la suscrita legalmente autorizada para ejercer la medicina, hace constar que tras la valoración clínica realizada el día de hoy, el paciente <strong className="text-high-contrast font-black underline decoration-primary/20 underline-offset-8">{formData.patientName || '__________________________'}</strong>, de 34 años de edad, presenta un cuadro clínico compatible con:
-                            </p>
-                            {formData.diagnosis && (
-                              <div className="bg-surface-low/40 p-10 rounded-[2rem] border-l-[6px] border-primary/20 italic text-lg leading-relaxed shadow-sm">
-                                {formData.diagnosis}
-                              </div>
-                            )}
-                            <p>Se expide la presente a solicitud del interesado para los fines legales a que haya lugar.</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-24 flex items-center gap-8 text-high-contrast/10">
-                        <div className="flex-1 h-[2px] bg-current" />
-                        <div className="flex items-center gap-4">
-                          <p className="text-[10px] font-black uppercase tracking-[0.5em]">MediFácil • The Clinical Atelier</p>
-                        </div>
-                        <div className="flex-1 h-[2px] bg-current" />
-                      </div>
+                    <div id="printable-document">
+                      {plantilla === 'certificado' && (
+                        <CertificadoMedicoTemplate data={certData} profile={profile} documentRef={documentRef} />
+                      )}
+                      {plantilla === 'nacimiento' && (
+                        <ConstanciaNacimientoTemplate data={nacData} profile={profile} documentRef={documentRef} />
+                      )}
+                      {plantilla === 'presupuesto' && (
+                        <PresupuestoMedicoTemplate data={presData} profile={profile} documentRef={documentRef} />
+                      )}
                     </div>
                   </div>
                 </div>

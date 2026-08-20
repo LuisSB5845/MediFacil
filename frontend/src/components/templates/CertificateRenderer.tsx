@@ -22,7 +22,7 @@ export const CertificateRenderer: React.FC<Props> = ({
   // 1. Si hay datos estructurados de constancia de nacimiento
   if (certificationType === 'birth' && structuredData) {
     return (
-      <div ref={documentRef} className="w-full">
+      <div id="printable-document" ref={documentRef} className="w-full">
         <CertificadoNacimientoTemplate
           data={structuredData as BirthCertificationData}
           profile={profile}
@@ -34,7 +34,7 @@ export const CertificateRenderer: React.FC<Props> = ({
   // 2. Si hay datos estructurados de certificado narrativo
   if (certificationType === 'narrative' && structuredData) {
     return (
-      <div ref={documentRef} className="w-full">
+      <div id="printable-document" ref={documentRef} className="w-full">
         <CertificadoNarrativoTemplate
           data={structuredData as NarrativeCertificationData}
           profile={profile}
@@ -46,6 +46,7 @@ export const CertificateRenderer: React.FC<Props> = ({
   // 3. Fallback para documentos legacy/plantillas estándar (texto plano)
   return (
     <div
+      id="printable-document"
       className="bg-white rounded-[2.5rem] shadow-ambient border border-surface-container-high p-20 relative flex flex-col min-h-[1100px] h-auto w-full overflow-visible"
       ref={documentRef}
     >
@@ -74,7 +75,7 @@ export const CertificateRenderer: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex-1 whitespace-pre-wrap text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
+      <div className="flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
         {documentContent}
       </div>
 

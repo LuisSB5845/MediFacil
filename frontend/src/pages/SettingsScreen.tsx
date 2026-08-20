@@ -27,7 +27,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
     else setUploadingDoctorLogo(true);
 
     try {
-      // Devuelve un data URI Base64 comprimido (300x300 JPEG). No hay Storage:
+      // Devuelve un data URI Base64 comprimido en JPEG. No hay Storage:
       // el string se guarda directamente en el documento del usuario.
       const dataUri = await uploadLogoImage(file, user.uid, type);
       const field = type === 'clinic' ? 'clinicLogoUrl' : 'doctorLogoUrl';
@@ -340,7 +340,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
               </div>
               <div>
                 <h3 className="title-atelier text-primary">Branding Visual & Logos Institucionales</h3>
-                <p className="text-xs text-high-contrast/50 mt-0.5">Formatos permitidos: PNG, JPG, SVG (máx. 2MB). La imagen se optimiza automáticamente a 300x300px y se guarda en tu perfil.</p>
+                <p className="text-xs text-high-contrast/50 mt-0.5">Formatos permitidos: PNG, JPG, SVG (máx. 2MB). La imagen se optimiza automáticamente (600x600px el logo personal, 300x300px el de la clínica) y se guarda en tu perfil.</p>
               </div>
             </div>
 
@@ -444,7 +444,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                     </div>
                     <div>
                       <p className="text-xs font-bold text-secondary">Cargar Logo/Sello Personal</p>
-                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG · se optimiza a 300x300px</p>
+                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG · se optimiza a 600x600px</p>
                     </div>
                     <button 
                       type="button"

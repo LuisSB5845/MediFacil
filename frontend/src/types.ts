@@ -109,7 +109,17 @@ export interface RecetaRxData {
   contenido: string;
 }
 
-export type CertificationType = 'narrative' | 'birth' | 'receta';
+export interface OrdenLabData {
+  nombrePaciente: string;
+  fecha: string;
+  /** Etiquetas de los estudios marcados (ver lib/ordenLabCatalog). */
+  seleccionados: string[];
+  otrosRadiografias?: string;
+  otrosEstudios?: string;
+  otros?: string;
+}
+
+export type CertificationType = 'narrative' | 'birth' | 'receta' | 'orden_lab';
 
 export interface ClinicalDocument {
   id: string;
@@ -120,7 +130,7 @@ export interface ClinicalDocument {
   patientName?: string;
   createdAt: any;
   content: string;
-  structuredData?: NarrativeCertificationData | BirthCertificationData | RecetaRxData;
+  structuredData?: NarrativeCertificationData | BirthCertificationData | RecetaRxData | OrdenLabData;
   certificationType?: CertificationType;
   templateType?: string;
 }
