@@ -3,12 +3,16 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { motion } from 'motion/react';
 import {
   X, Search, Users, ChevronRight, Sparkles, Loader2,
-  FileText, ArrowLeft, Check, Pill,
+  FileText, ArrowLeft, Check, Pill, FlaskConical,
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { generateStructuredCertification } from '../lib/ai';
-import { Patient, UserProfile, RecetaRxData } from '../types';
+import { Patient, UserProfile, RecetaRxData, OrdenLabData } from '../types';
 import { RecetaRxTemplate } from './templates/RecetaRxTemplate';
+import { OrdenLabTemplate } from './templates/OrdenLabTemplate';
+import { ORDEN_LAB_COLUMNAS } from '../lib/ordenLabCatalog';
+
+type DocTipo = 'rx' | 'lab';
 
 const todayLabel = () => new Date().toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -34,6 +38,7 @@ export const RecetaRapidaModal = ({
   doctorUid: string;
   onClose: () => void;
 }) => {
+  const [tipo, setTipo] = useState<DocTipo>('rx');
   const [step, setStep] = useState<'form' | 'preview'>('form');
   const [search, setSearch] = useState('');
   const [showPatientPicker, setShowPatientPicker] = useState(false);
@@ -51,11 +56,32 @@ export const RecetaRapidaModal = ({
     [patients, search]
   );
 
+  // Orden de laboratorio: selección manual de estudios, sin IA.
+  const [seleccionados, setSeleccionados] = useState<string[]>([]);
+  const [otrosRadiografias, setOtrosRadiografias] = useState('');
+  const [otrosEstudios, setOtrosEstudios] = useState('');
+  const [otros, setOtros] = useState('');
+
   const recetaData: RecetaRxData = useMemo(() => ({
     nombrePaciente: nombrePaciente.trim() || 'N/E',
     fecha: fecha.trim() || todayLabel(),
     contenido: contenido.trim(),
   }), [nombrePaciente, fecha, contenido]);
+
+  const ordenLabData: OrdenLabData = useMemo(() => ({
+    nombrePaciente: nombrePaciente.trim() || 'N/E',
+    fecha: fecha.trim() || todayLabel(),
+    seleccionados,
+    otrosRadiografias: otrosRadiografias.trim(),
+    otrosEstudios: otrosEstudios.trim(),
+    otros: otros.trim(),
+  }), [nombrePaciente, fecha, seleccionados, otrosRadiografias, otrosEstudios, otros]);
+
+  const toggleEstudio = (item: string) => {
+    setSeleccionados(prev =>
+      prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
+    );
+  };
 
   /**
    * Mejora con IA (POST /api/ai/generate-certification, tipo 'receta').
@@ -102,8 +128,13 @@ export const RecetaRapidaModal = ({
       setError('Indica el nombre del paciente antes de generar la vista previa.');
       return;
     }
-    if (!recetaData.contenido) {
+    if (tipo === 'rx' && !recetaData.contenido) {
       setError('Escribe el contenido de la receta.');
+      return;
+    }
+    if (tipo === 'lab' && seleccionados.length === 0 && !otros.trim()
+        && !otrosRadiografias.trim() && !otrosEstudios.trim()) {
+      setError('Marca al menos un estudio.');
       return;
     }
     setError(null);
@@ -114,22 +145,27 @@ export const RecetaRapidaModal = ({
     setIsSaving(true);
     setError(null);
 
+    const esRx = tipo === 'rx';
+    const data = esRx ? recetaData : ordenLabData;
+
     try {
       await addDoc(collection(db, 'clinical_documents'), {
-        title: `Receta Rx - ${recetaData.nombrePaciente}`,
-        subtitle: 'Generado hoy • Receta rápida',
+        title: `${esRx ? 'Receta Rx' : 'Orden de Laboratorio'} - ${data.nombrePaciente}`,
+        subtitle: esRx
+          ? 'Generado hoy • Receta rápida'
+          : `Generado hoy • ${ordenLabData.seleccionados.length} estudio${ordenLabData.seleccionados.length === 1 ? '' : 's'}`,
         type: 'structured_certification',
-        certificationType: 'receta',
-        structuredData: recetaData,
+        certificationType: esRx ? 'receta' : 'orden_lab',
+        structuredData: data,
         doctorUid,
-        patientName: recetaData.nombrePaciente,
+        patientName: data.nombrePaciente,
         createdAt: serverTimestamp(),
-        content: JSON.stringify(recetaData, null, 2),
+        content: JSON.stringify(data, null, 2),
       });
       onClose();
     } catch (err: any) {
-      console.error('Error guardando la receta:', err);
-      setError(err?.message || 'No se pudo guardar la receta.');
+      console.error('Error guardando el documento:', err);
+      setError(err?.message || 'No se pudo guardar el documento.');
       setIsSaving(false);
     }
   };
@@ -150,21 +186,51 @@ export const RecetaRapidaModal = ({
         className="relative card-atelier w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden"
       >
         {/* Cabecera */}
-        <div className="p-6 md:p-8 flex justify-between items-center border-b border-surface-container-high shrink-0">
+        <div className="p-6 md:p-8 pb-0 md:pb-0 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-4">
             <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <Pill className="w-5 h-5" />
+              {tipo === 'rx' ? <Pill className="w-5 h-5" /> : <FlaskConical className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="title-atelier text-primary">Receta Rápida</h3>
+              <h3 className="title-atelier text-primary">
+                {tipo === 'rx' ? 'Receta Rápida' : 'Orden de Laboratorio'}
+              </h3>
               <p className="text-xs text-high-contrast/50">
-                {step === 'form' ? 'Dicta o escribe la receta y ajusta lo que haga falta' : 'Revisa el documento antes de guardarlo'}
+                {step === 'preview'
+                  ? 'Revisa el documento antes de guardarlo'
+                  : tipo === 'rx'
+                    ? 'Dicta o escribe la receta y ajusta lo que haga falta'
+                    : 'Marca los estudios que necesita el paciente'}
               </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-surface-high rounded-full transition-colors">
             <X className="w-6 h-6 text-high-contrast/40" />
           </button>
+        </div>
+
+        {/* Selector de tipo de documento */}
+        <div className="px-6 md:px-8 pt-5 pb-5 border-b border-surface-container-high shrink-0">
+          <div className="inline-flex gap-1 p-1 bg-surface-container-high rounded-xl">
+            {([
+              { id: 'rx' as DocTipo, label: 'Receta Rx', icon: Pill },
+              { id: 'lab' as DocTipo, label: 'Orden de Laboratorio', icon: FlaskConical },
+            ]).map(opt => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => { setTipo(opt.id); setStep('form'); setError(null); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  tipo === opt.id
+                    ? 'bg-white text-primary shadow-sm'
+                    : 'text-high-contrast/50 hover:text-high-contrast'
+                }`}
+              >
+                <opt.icon className="w-4 h-4" />
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -253,6 +319,7 @@ export const RecetaRapidaModal = ({
               </section>
 
               {/* 2. Contenido de la receta — texto libre + mejora con IA */}
+              {tipo === 'rx' && (
               <section className="space-y-3">
                 <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">
                   Contenido de la receta
@@ -279,12 +346,96 @@ export const RecetaRapidaModal = ({
                   </button>
                 </div>
               </section>
+              )}
 
-              {/* 3. Datos de la receta */}
+              {/* 2b. Estudios de la orden de laboratorio — selección manual */}
+              {tipo === 'lab' && (
+              <section className="space-y-5">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">
+                    Estudios solicitados
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-bold text-primary">
+                      {seleccionados.length} marcado{seleccionados.length === 1 ? '' : 's'}
+                    </span>
+                    {seleccionados.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSeleccionados([])}
+                        className="text-[11px] font-bold text-high-contrast/40 hover:text-red-600 transition-colors"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {ORDEN_LAB_COLUMNAS.map((columna, ci) => (
+                    <div key={ci} className="space-y-5">
+                      {columna.map(grupo => (
+                        <div key={grupo.titulo} className="space-y-2">
+                          <p className="text-[10px] font-black text-primary uppercase tracking-widest">
+                            {grupo.titulo}
+                          </p>
+                          <div className="space-y-1">
+                            {grupo.items.map(item => (
+                              <label
+                                key={item}
+                                className="flex items-start gap-2 cursor-pointer group"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={seleccionados.includes(item)}
+                                  onChange={() => toggleEstudio(item)}
+                                  className="mt-0.5 w-3.5 h-3.5 shrink-0 accent-[#191970] cursor-pointer"
+                                />
+                                <span className="text-xs text-high-contrast/70 leading-tight group-hover:text-high-contrast">
+                                  {item}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                          {grupo.otrosKey && (
+                            <input
+                              className="input-field w-full !rounded-xl py-2 px-3 text-xs"
+                              type="text"
+                              placeholder="Otros..."
+                              value={grupo.otrosKey === 'otrosRadiografias' ? otrosRadiografias : otrosEstudios}
+                              onChange={(e) =>
+                                grupo.otrosKey === 'otrosRadiografias'
+                                  ? setOtrosRadiografias(e.target.value)
+                                  : setOtrosEstudios(e.target.value)
+                              }
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">
+                    Otros (renglón libre al pie)
+                  </label>
+                  <textarea
+                    className="input-field w-full resize-none !rounded-2xl px-5 py-4 leading-relaxed"
+                    rows={2}
+                    placeholder="Cualquier estudio que no esté en la lista..."
+                    value={otros}
+                    onChange={(e) => setOtros(e.target.value)}
+                  />
+                </div>
+              </section>
+              )}
+
+              {/* 3. Datos del documento */}
               <section className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Nombre en la receta</label>
+                    <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Nombre del paciente</label>
                     <input
                       className="input-field w-full"
                       type="text"
@@ -306,22 +457,40 @@ export const RecetaRapidaModal = ({
             </div>
           ) : (
             <div className="bg-surface-low -m-6 md:-m-8 p-6 md:p-8">
-              <RecetaRxTemplate
-                data={recetaData}
-                doctorName={profile?.displayName || 'Médico'}
-                specialty={profile?.specialty || ''}
-                doctorInitials={buildInitials(profile?.displayName)}
-                exequatur={profile?.exequatur}
-                doctorLogoUrl={profile?.doctorLogoUrl}
-                clinicLogoUrl={profile?.clinicLogoUrl}
-                clinicName={profile?.clinicName}
-                clinicTagline={profile?.clinicTagline}
-                clinicAddress={profile?.clinicAddress}
-                clinicSuite={profile?.clinicSuite}
-                phoneOffice={profile?.phoneOffice}
-                phoneExt={profile?.phoneExt}
-                phoneCell={profile?.phoneCell}
-              />
+              {tipo === 'rx' ? (
+                <RecetaRxTemplate
+                  data={recetaData}
+                  doctorName={profile?.displayName || 'Médico'}
+                  specialty={profile?.specialty || ''}
+                  doctorInitials={buildInitials(profile?.displayName)}
+                  exequatur={profile?.exequatur}
+                  doctorLogoUrl={profile?.doctorLogoUrl}
+                  clinicLogoUrl={profile?.clinicLogoUrl}
+                  clinicName={profile?.clinicName}
+                  clinicTagline={profile?.clinicTagline}
+                  clinicAddress={profile?.clinicAddress}
+                  clinicSuite={profile?.clinicSuite}
+                  phoneOffice={profile?.phoneOffice}
+                  phoneExt={profile?.phoneExt}
+                  phoneCell={profile?.phoneCell}
+                />
+              ) : (
+                <OrdenLabTemplate
+                  data={ordenLabData}
+                  doctorName={profile?.displayName || 'Médico'}
+                  specialty={profile?.specialty || ''}
+                  exequatur={profile?.exequatur}
+                  doctorLogoUrl={profile?.doctorLogoUrl}
+                  clinicLogoUrl={profile?.clinicLogoUrl}
+                  clinicName={profile?.clinicName}
+                  clinicTagline={profile?.clinicTagline}
+                  clinicAddress={profile?.clinicAddress}
+                  clinicSuite={profile?.clinicSuite}
+                  phoneOffice={profile?.phoneOffice}
+                  phoneExt={profile?.phoneExt}
+                  phoneCell={profile?.phoneCell}
+                />
+              )}
             </div>
           )}
         </div>

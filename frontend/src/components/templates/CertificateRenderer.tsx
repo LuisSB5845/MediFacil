@@ -75,7 +75,7 @@ export const CertificateRenderer: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex-1 whitespace-pre-wrap text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
+      <div className="flex-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-high-contrast leading-[1.8] text-justify text-base font-medium px-4 pb-20">
         {documentContent}
       </div>
 
