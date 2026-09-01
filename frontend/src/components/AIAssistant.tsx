@@ -120,7 +120,10 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     const textToSend = overrideInput || input;
     if (!textToSend.trim() || isLoading || !user) return;
 
-    console.log("AI Assistant: Sending message...", { textToSend, activeChatId });
+    if (import.meta.env.DEV) {
+      // El texto puede contener datos del paciente: solo se registra su tamaño.
+      console.log("AI Assistant: Sending message...", { chars: textToSend.length, activeChatId });
+    }
 
     if (profile && !canUseAI(profile as any).allowed) {
       alert("Has alcanzado el límite de mensajes de IA de tu plan. Actualiza a Pro para seguir conversando.");
@@ -133,9 +136,9 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
     try {
       let chatId = activeChatId;
       if (!chatId) {
-        console.log("AI Assistant: Creating new chat...");
+        if (import.meta.env.DEV) console.log("AI Assistant: Creating new chat...");
         chatId = await createNewChat(textToSend.substring(0, 30) + "...");
-        console.log("AI Assistant: New chat created with ID:", chatId);
+        if (import.meta.env.DEV) console.log("AI Assistant: New chat created with ID:", chatId);
       }
 
       if (!chatId) {
@@ -143,7 +146,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       }
 
       // 1. Add User Message to Firestore
-      console.log("AI Assistant: Adding user message to Firestore...");
+      if (import.meta.env.DEV) console.log("AI Assistant: Adding user message to Firestore...");
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
         role: 'user',
         content: textToSend,
@@ -157,7 +160,7 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       });
 
       // 3. Call AI with History Context
-      console.log("AI Assistant: Calling AI proxy...");
+      if (import.meta.env.DEV) console.log("AI Assistant: Calling AI proxy...");
       const historyWithCurrent = [
         ...messages,
         { role: 'user', content: textToSend }
@@ -165,10 +168,13 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       const chat = createChat(historyWithCurrent);
       const result = await chat.sendMessage(textToSend);
       const aiResponse = await result.response.then(r => r.text());
-      console.log("AI Assistant: AI response received:", aiResponse.substring(0, 50) + "...");
+      if (import.meta.env.DEV) {
+        // Contenido clínico: se registra el tamaño, nunca el texto.
+        console.log("AI Assistant: AI response received", { chars: aiResponse.length });
+      }
 
       // 4. Add AI Message to Firestore
-      console.log("AI Assistant: Adding assistant message to Firestore...");
+      if (import.meta.env.DEV) console.log("AI Assistant: Adding assistant message to Firestore...");
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
         role: 'assistant',
         content: aiResponse,

@@ -9,6 +9,8 @@ import {
   Calendar,
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FileDown,
   Printer as PrintIcon,
   Check,
@@ -30,7 +32,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { UserProfile, ClinicalDocument } from '../types';
 import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
@@ -52,7 +54,7 @@ import * as pdfjs from 'pdfjs-dist';
 // Configurar el worker de PDF.js (necesario para que funcione en el navegador)
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
-type DocView = 'selection' | 'template' | 'ai';
+type DocView = 'selection' | 'template' | 'ai' | 'history';
 
 /** Las tres plantillas membretadas de la consulta. */
 type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto';
@@ -60,6 +62,13 @@ type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto';
 /** Estilos compartidos por los campos de las plantillas. */
 const LBL = 'text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1';
 const INPUT = 'w-full h-14 px-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white';
+
+/** Tipo de documento estructurado que pide cada plantilla al backend. */
+const AI_TARGET: Record<PlantillaId, 'certificado' | 'birth' | 'presupuesto'> = {
+  certificado: 'certificado',
+  nacimiento: 'birth',
+  presupuesto: 'presupuesto',
+};
 
 const PLANTILLAS: { id: PlantillaId; label: string }[] = [
   { id: 'certificado', label: 'Certificado Médico' },
@@ -73,6 +82,9 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   const [isExporting, setIsExporting] = useState(false);
   
   const [recentDocuments, setRecentDocuments] = useState<ClinicalDocument[]>([]);
+  const [allDocuments, setAllDocuments] = useState<ClinicalDocument[]>([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
   const [selectedDoc, setSelectedDoc] = useState<ClinicalDocument | null>(null);
   
   const documentRef = useRef<HTMLDivElement>(null);
@@ -85,17 +97,20 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       collection(db, 'clinical_documents'),
       where('doctorUid', '==', user.uid),
       orderBy('createdAt', 'desc'),
-      // Se piden de más porque las recetas se descartan abajo y este generador
-      // debe seguir mostrando 5 documentos propios.
-      limit(20)
+      // El historial completo pagina sobre este mismo conjunto.
+      limit(200)
     );
     return onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument))
         // Las recetas Rx tienen su propio flujo (Receta Rápida) y no se abren aquí.
-        .filter(doc => doc.certificationType !== 'receta' && doc.certificationType !== 'orden_lab')
-        .slice(0, 5);
-      setRecentDocuments(docs);
+        .filter(doc => doc.certificationType !== 'receta' && doc.certificationType !== 'orden_lab');
+      setAllDocuments(docs);
+      setRecentDocuments(docs.slice(0, 5));
+    }, (error) => {
+      // Sin este callback un índice faltante o una regla denegada dejaban la
+      // lista vacía en silencio, sin rastro en consola.
+      handleFirestoreError(error, OperationType.LIST, 'clinical_documents');
     });
   }, [user]);
 
@@ -162,6 +177,8 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   const [isExtracting, setIsExtracting] = useState(false);
   const [generatedDocContent, setGeneratedDocContent] = useState('');
   const [certificationType, setCertificationType] = useState<'narrative' | 'birth'>('narrative');
+  /** Plantilla que la IA debe rellenar. */
+  const [aiPlantilla, setAiPlantilla] = useState<PlantillaId>('certificado');
   const [structuredData, setStructuredData] = useState<any | null>(null);
 
 
@@ -173,7 +190,10 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
     setUploadedFile(file);
     setIsExtracting(true);
     setExtractedText('');
-    console.log("DocumentGenerator: Extracting text from file:", file.name, file.type);
+    if (import.meta.env.DEV) {
+      // El nombre del archivo suele incluir el del paciente: no se registra.
+      console.log("DocumentGenerator: Extracting text from file", { type: file.type, bytes: file.size });
+    }
 
     try {
       if (file.type.startsWith('image/')) {
@@ -184,7 +204,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             const base64 = reader.result as string;
             const text = await analyzeMedicalImage(base64, "Extrae fielmente todo el texto de este documento médico.");
             setExtractedText(text);
-            console.log("DocumentGenerator: Image text extracted.");
+            if (import.meta.env.DEV) console.log("DocumentGenerator: Image text extracted.");
           } catch (e) {
             console.error("Error analizando imagen:", e);
             alert("No se pudo extraer texto de la imagen.");
@@ -198,7 +218,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
           try {
             const result = await mammoth.extractRawText({ arrayBuffer });
             setExtractedText(result.value);
-            console.log("DocumentGenerator: .docx text extracted.");
+            if (import.meta.env.DEV) console.log("DocumentGenerator: .docx text extracted.");
           } catch (err) {
             console.error("Error con mammoth:", err);
             alert("Error al leer el archivo Word.");
@@ -214,7 +234,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             let fullText = "";
-            console.log(`DocumentGenerator: PDF loaded. Total pages: ${pdf.numPages}`);
+            if (import.meta.env.DEV) console.log(`DocumentGenerator: PDF loaded. Total pages: ${pdf.numPages}`);
             
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
@@ -223,7 +243,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
               fullText += `--- PÁGINA ${i} ---\n${strings.join(" ")}\n\n`;
             }
             setExtractedText(fullText);
-            console.log("DocumentGenerator: Multi-page PDF text extracted successfully.");
+            if (import.meta.env.DEV) console.log("DocumentGenerator: Multi-page PDF text extracted successfully.");
           } catch (err) {
             console.error("Error con PDF.js:", err);
             alert("Error al leer el archivo PDF.");
@@ -235,7 +255,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
         const reader = new FileReader();
         reader.onload = (e) => {
           setExtractedText(e.target?.result as string);
-          console.log("DocumentGenerator: .txt text extracted.");
+          if (import.meta.env.DEV) console.log("DocumentGenerator: .txt text extracted.");
         };
         reader.readAsText(file);
       } else {
@@ -249,14 +269,12 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   };
 
   const handleGenerate = async () => {
-    console.log("DocumentGenerator: Starting generation...", { view });
     setIsGenerating(true);
     
     try {
       if (view === 'template') {
         // ... (resto del código de plantilla idéntico)
         if (user) {
-          console.log("DocumentGenerator: Saving template document...");
           const etiqueta = PLANTILLAS.find(p => p.id === plantilla)?.label || 'Documento';
           const resumen = resumenPlantilla();
           await addDoc(collection(db, 'clinical_documents'), {
@@ -270,7 +288,6 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             structuredData: resumen.data,
             templateType: etiqueta
           });
-          console.log("DocumentGenerator: Template document saved.");
         }
 
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -285,35 +302,87 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
         return;
       }
       
-      console.log("DocumentGenerator: Calling Structured AI Certification...", { certificationType });
+      if (import.meta.env.DEV) console.log("DocumentGenerator: Calling Structured AI Certification...", { aiPlantilla });
       
       const documentContext = extractedText ? `DOCUMENTO DE REFERENCIA SUBIDO (Extraído):\n"""\n${extractedText}\n"""\n\n` : "";
       const fullContext = `${documentContext}Perfil Doctor: Dra. ${profile?.displayName || ''} (${profile?.specialty || ''})`;
       
-      const result = await generateStructuredCertification(aiPrompt, fullContext, certificationType);
-      
-      if (result && result.data) {
-        setStructuredData(result.data);
-        const titleText = certificationType === 'birth'
-          ? `Constancia de Nacimiento - ${result.data.nombreMadre || 'Recién Nacido'}`
-          : `Certificado Médico - ${result.data.patientName || 'Paciente'}`;
-          
-        setGeneratedDocContent(JSON.stringify(result.data, null, 2));
+      // La IA rellena la plantilla elegida: cada objetivo tiene su esquema.
+      const tipoIA = AI_TARGET[aiPlantilla];
+      const result = await generateStructuredCertification(aiPrompt, fullContext, tipoIA);
 
-        if (user) {
-          console.log("DocumentGenerator: Saving Structured AI document...");
+      if (result && result.data) {
+        const d: any = result.data;
+        setStructuredData(d);
+        setGeneratedDocContent(JSON.stringify(d, null, 2));
+
+        // Volcado a los campos de la plantilla, para que quede prellenada y
+        // editable en la vista de plantilla con su vista previa en vivo.
+        let titleText: string;
+        // Nombre con el que se archiva: sin el, el documento queda huerfano.
+        const pacienteIA: string = (
+          aiPlantilla === 'nacimiento' ? d.nombreMadre
+          : aiPlantilla === 'presupuesto' ? d.nombrePaciente
+          : d.paciente
+        ) || '';
+
+        if (aiPlantilla === 'nacimiento') {
+          setNac(prev => ({
+            ...prev,
+            nombreMadre: d.nombreMadre || '',
+            cedulaMadre: d.cedulaMadre || '',
+            sexoProducto: d.sexoProducto || prev.sexoProducto,
+            peso: d.peso || '',
+            hora: d.hora || '',
+            dia: d.dia || '',
+            mes: d.mes || '',
+            anio: d.anio || prev.anio,
+            medicoTratante: d.medicoTratante || '',
+            fechaExpedicion: d.fechaExpedicion || prev.fechaExpedicion,
+          }));
+          titleText = `Constancia de Nacimiento - ${d.nombreMadre || 'Recién Nacido'}`;
+        } else if (aiPlantilla === 'presupuesto') {
+          setPresCedula(d.cedulaPaciente || '');
+          setPresPaciente(d.nombrePaciente || '');
+          if (d.fecha) setPresFecha(d.fecha);
+          setPresDiagnostico(d.diagnostico || '');
+          setProcedimientos(
+            Array.isArray(d.procedimientos) && d.procedimientos.length > 0
+              ? d.procedimientos.map((pr: any) => ({
+                  descripcion: pr?.descripcion || '',
+                  monto: Number(pr?.monto) || 0,
+                }))
+              : [{ descripcion: '', monto: 0 }]
+          );
+          titleText = `Presupuesto Médico - ${d.nombrePaciente || 'Paciente'}`;
+        } else {
+          setCertPaciente(d.paciente || '');
+          if (d.fecha) setCertFecha(d.fecha);
+          setCertCuerpo(d.cuerpo || '');
+          titleText = `Certificado Médico - ${d.paciente || 'Paciente'}`;
+        }
+
+        if (user && pacienteIA.trim()) {
           await addDoc(collection(db, 'clinical_documents'), {
             title: titleText,
-            subtitle: `Generado hoy • Certificación (${certificationType})`,
+            subtitle: `Generado hoy • Certificación (${tipoIA})`,
             type: 'structured_certification',
-            certificationType: certificationType,
-            structuredData: result.data,
+            certificationType: tipoIA,
+            structuredData: d,
             doctorUid: user.uid,
+            patientName: pacienteIA,
             createdAt: serverTimestamp(),
-            content: JSON.stringify(result.data, null, 2)
+            content: JSON.stringify(d, null, 2)
           });
-          console.log("DocumentGenerator: Structured document saved.");
         }
+
+        if (!pacienteIA.trim()) {
+          alert('No se identificó el paciente en lo que describiste, así que el documento no se archivó. Complétalo en la plantilla y usa GENERAR DOCUMENTO para guardarlo.');
+        }
+
+        // La plantilla queda lista para revisar, ajustar e imprimir.
+        setPlantilla(aiPlantilla);
+        setView('template');
       }
     } catch (error: any) {
       console.error("DocumentGenerator Error:", error);
@@ -443,6 +512,123 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
   };
 
 
+  // --- Historial completo: buscador reactivo + paginacion ---
+  const HISTORY_PAGE_SIZE = 12;
+
+  const historyFiltered = allDocuments.filter(doc => {
+    const term = historySearch.trim().toLowerCase();
+    if (!term) return true;
+    return [doc.patientName, doc.title, doc.templateType, doc.certificationType]
+      .filter(Boolean)
+      .some(campo => String(campo).toLowerCase().includes(term));
+  });
+
+  const historyPages = Math.max(1, Math.ceil(historyFiltered.length / HISTORY_PAGE_SIZE));
+  const historyPageSafe = Math.min(historyPage, historyPages);
+  const historySlice = historyFiltered.slice(
+    (historyPageSafe - 1) * HISTORY_PAGE_SIZE,
+    historyPageSafe * HISTORY_PAGE_SIZE
+  );
+
+  const tipoLegible = (doc: ClinicalDocument) => {
+    if (doc.type === 'template') return doc.templateType || 'Plantilla';
+    if (doc.type === 'structured_certification') {
+      if (doc.certificationType === 'birth') return 'Constancia de Nacimiento';
+      if (doc.certificationType === 'presupuesto') return 'Presupuesto Médico';
+      return 'Certificado Médico';
+    }
+    return 'Asistente IA';
+  };
+
+  const renderHistory = () => (
+    <div className="p-8 md:p-16 max-w-6xl mx-auto w-full space-y-10">
+      <div className="space-y-6">
+        <button
+          onClick={() => setView('selection')}
+          className="flex items-center gap-3 bg-primary text-white px-6 py-3 rounded-2xl hover:bg-primary-container transition-all group shadow-lg shadow-primary/20 w-fit"
+        >
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-widest">Volver</span>
+        </button>
+        <div className="space-y-2">
+          <h2 className="text-4xl font-black text-high-contrast tracking-tight">Historial completo</h2>
+          <p className="text-sm font-medium text-high-contrast/40">
+            {historyFiltered.length} documento{historyFiltered.length === 1 ? '' : 's'}
+            {historySearch.trim() && ` para "${historySearch.trim()}"`}
+          </p>
+        </div>
+      </div>
+
+      <div className="relative max-w-lg">
+        <Search className="w-4 h-4 absolute left-5 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+        <input
+          type="text"
+          placeholder="Buscar por paciente o tipo de documento..."
+          value={historySearch}
+          onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+          className="w-full h-14 pl-14 pr-4 bg-white border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all"
+        />
+      </div>
+
+      {historySlice.length > 0 ? (
+        <div className="space-y-3">
+          {historySlice.map(doc => (
+            <div
+              key={doc.id}
+              onClick={() => handleViewDoc(doc)}
+              className="flex items-center justify-between p-6 bg-white border border-surface-container-high rounded-3xl hover:border-primary/30 hover:shadow-lg transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-6 min-w-0">
+                <div className="w-12 h-12 bg-surface-low rounded-2xl flex items-center justify-center text-high-contrast/30 group-hover:bg-primary/5 group-hover:text-primary transition-colors shrink-0">
+                  {doc.type === 'template' ? <FileText className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-black text-high-contrast group-hover:text-primary transition-colors truncate">
+                    {doc.patientName || 'Sin paciente'}
+                  </p>
+                  <p className="text-xs font-medium text-high-contrast/40 mt-0.5 truncate">
+                    {tipoLegible(doc)} · {doc.createdAt?.toDate
+                      ? new Date(doc.createdAt.toDate()).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : 'Recién creado'}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown className="w-5 h-5 text-high-contrast/20 -rotate-90 group-hover:text-primary/40 transition-colors shrink-0" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="p-20 text-center border-2 border-dashed border-surface-container-high rounded-[3rem] bg-surface-low/20">
+          <p className="text-high-contrast/20 font-black uppercase tracking-widest text-sm">
+            {allDocuments.length === 0 ? 'Aún no hay documentos' : 'Nada coincide con esa búsqueda'}
+          </p>
+        </div>
+      )}
+
+      {historyPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <button
+            onClick={() => setHistoryPage(pag => Math.max(1, pag - 1))}
+            disabled={historyPageSafe === 1}
+            className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white border border-surface-container-high text-xs font-black uppercase tracking-widest hover:border-primary/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <ChevronLeft className="w-4 h-4" /> Anterior
+          </button>
+          <span className="text-xs font-black text-high-contrast/40 uppercase tracking-widest">
+            Página {historyPageSafe} de {historyPages}
+          </span>
+          <button
+            onClick={() => setHistoryPage(pag => Math.min(historyPages, pag + 1))}
+            disabled={historyPageSafe === historyPages}
+            className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white border border-surface-container-high text-xs font-black uppercase tracking-widest hover:border-primary/30 transition-all disabled:opacity-40 disabled:pointer-events-none"
+          >
+            Siguiente <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const renderSelection = () => (
     <div className="max-w-7xl mx-auto py-16 space-y-24 px-8">
       <div className="text-center space-y-4">
@@ -505,7 +691,10 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       <div className="space-y-10">
         <div className="flex items-center justify-between">
           <h3 className="text-3xl font-black text-high-contrast tracking-tight">Recientes</h3>
-          <button className="text-sm font-black text-primary flex items-center gap-2 hover:underline underline-offset-4">
+          <button
+            onClick={() => { setHistorySearch(''); setHistoryPage(1); setView('history'); }}
+            className="text-sm font-black text-primary flex items-center gap-2 hover:underline underline-offset-4"
+          >
             Ver todo el historial <Download className="w-4 h-4 rotate-[-90deg]" />
           </button>
         </div>
@@ -547,7 +736,11 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
       {renderHeader()}
 
       <AnimatePresence mode="wait">
-        {view === 'selection' ? (
+        {view === 'history' ? (
+          <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex-1 overflow-y-auto no-scrollbar">
+            {renderHistory()}
+          </motion.div>
+        ) : view === 'selection' ? (
           <motion.div key="selection" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex-1 overflow-y-auto no-scrollbar">
             {renderSelection()}
           </motion.div>
@@ -826,33 +1019,27 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                     <div className="space-y-8">
                       <div className="space-y-6">
                         <div className="space-y-2">
-                          <label className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest px-1">Tipo de Certificación IA</label>
-                          <div className="flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setCertificationType('narrative')}
-                              className={cn(
-                                "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all border",
-                                certificationType === 'narrative'
-                                  ? "bg-primary text-white border-primary shadow-md shadow-primary/20"
-                                  : "bg-surface-low text-high-contrast/70 border-surface-container-high hover:border-primary/30"
-                              )}
-                            >
-                              📜 Certificado Médico
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCertificationType('birth')}
-                              className={cn(
-                                "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all border",
-                                certificationType === 'birth'
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20"
-                                  : "bg-surface-low text-high-contrast/70 border-surface-container-high hover:border-emerald-500/30"
-                              )}
-                            >
-                              👶 Nacido Vivo
-                            </button>
+                          <label className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest px-1">Plantilla a rellenar</label>
+                          <div className="flex flex-col gap-2">
+                            {PLANTILLAS.map(pl => (
+                              <button
+                                key={pl.id}
+                                type="button"
+                                onClick={() => setAiPlantilla(pl.id)}
+                                className={cn(
+                                  "w-full py-3 px-4 rounded-xl text-xs font-bold transition-all border text-left",
+                                  aiPlantilla === pl.id
+                                    ? "bg-primary text-white border-primary shadow-md shadow-primary/20"
+                                    : "bg-surface-low text-high-contrast/70 border-surface-container-high hover:border-primary/30"
+                                )}
+                              >
+                                {pl.label}
+                              </button>
+                            ))}
                           </div>
+                          <p className="text-[11px] text-high-contrast/40 px-1 pt-1">
+                            La IA extrae los datos y deja la plantilla prellenada para que la revises antes de imprimir.
+                          </p>
                         </div>
 
                         <div className="relative group">

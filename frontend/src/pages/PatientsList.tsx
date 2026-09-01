@@ -80,20 +80,11 @@ export const PatientsList = ({
 
   return (
     <div className="p-4 md:p-10 space-y-8 md:space-y-12">
-      {/* Zone 1: Search and Add */}
+      {/* Zone 1: Agregar paciente. El buscador vive junto a la lista general,
+          que es la sección que realmente filtra. */}
       <section>
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-6">
-          <div className="relative flex-grow">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface-variant w-5 h-5 md:w-6 md:h-6" />
-            <input 
-              className="w-full h-14 md:h-16 pl-14 md:pl-16 pr-6 rounded-2xl md:rounded-full bg-surface-container-low border-none focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all text-base md:text-lg font-medium placeholder:text-on-surface-variant/60" 
-              placeholder="Buscar por nombre o cédula..." 
-              type="text"
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-            />
-          </div>
-          <button 
+        <div className="flex justify-end">
+          <button
             onClick={onAddPatient}
             className="h-14 md:h-16 px-8 sidebar-gradient text-white rounded-2xl md:rounded-full font-bold flex items-center justify-center gap-3 shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
           >
@@ -181,6 +172,17 @@ export const PatientsList = ({
             </AnimatePresence>
           </div>
         </div>
+        <div className="relative mb-6 md:mb-8">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface-variant w-5 h-5 md:w-6 md:h-6" />
+          <input
+            className="w-full h-14 md:h-16 pl-14 md:pl-16 pr-6 rounded-2xl md:rounded-full bg-surface-container-low border-none focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all text-base md:text-lg font-medium placeholder:text-on-surface-variant/60"
+            placeholder="Buscar por nombre o cédula..."
+            type="text"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+        </div>
+
         <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0px_10px_40px_rgba(25,25,112,0.03)] border border-outline-variant/10">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px] text-left border-collapse">

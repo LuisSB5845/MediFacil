@@ -174,7 +174,7 @@ export function createChat(history: any[] = []) {
 export async function generateStructuredCertification(
   prompt: string,
   context: string = "",
-  certificationType: 'narrative' | 'birth' | 'receta' = 'narrative'
+  certificationType: 'narrative' | 'birth' | 'receta' | 'certificado' | 'presupuesto' = 'narrative'
 ) {
   try {
     const authHeader = await getAuthHeader();

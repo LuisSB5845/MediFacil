@@ -31,41 +31,39 @@ export interface FirestoreErrorInfo {
   operationType: OperationType;
   path: string | null;
   authInfo: {
+    /** Solo el uid: basta para depurar y no identifica a la persona por sí solo. */
     userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
   }
 }
 
+/** Lo único que puede llegar a la interfaz. No revela usuario, ruta ni causa. */
+export const GENERIC_ERROR_MESSAGE = 'Ocurrió un error, intenta de nuevo.';
+
+/**
+ * Registra un error de Firestore y corta la operación.
+ *
+ * El detalle (uid, ruta, mensaje original) se queda SIEMPRE en la consola y
+ * nunca sale en el throw: el Error que se propaga lleva un texto genérico, en
+ * desarrollo y en producción por igual. La variable de entorno solo decide
+ * cuánto detalle se imprime en consola, jamás qué se le muestra a la usuaria.
+ */
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
     },
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  if (import.meta.env.DEV) {
+    console.error('Firestore Error:', errInfo);
+  } else {
+    console.error(`Firestore Error [${operationType}]`);
+  }
+
+  throw new Error(GENERIC_ERROR_MESSAGE);
 }
 
 export async function testConnection() {
