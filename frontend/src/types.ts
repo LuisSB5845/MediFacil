@@ -119,7 +119,13 @@ export interface OrdenLabData {
   otros?: string;
 }
 
-export type CertificationType = 'narrative' | 'birth' | 'receta' | 'orden_lab';
+export type CertificationType =
+  | 'narrative'
+  | 'birth'
+  | 'receta'
+  | 'orden_lab'
+  | 'certificado'
+  | 'presupuesto';
 
 export interface ClinicalDocument {
   id: string;

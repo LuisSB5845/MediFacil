@@ -34,6 +34,28 @@ export const RecetaRxSchema = z.object({
 });
 
 /**
+ * Certificado medico narrativo (plantilla membretada). La IA redacta el cuerpo
+ * completo; el encabezado y la firma los pone la plantilla desde el perfil.
+ */
+export const CertificadoMedicoSchema = z.object({
+  paciente: z.string().describe('Nombre completo del paciente'),
+  fecha: z.string().describe('Fecha de emision en formato dd/mm/aaaa'),
+  cuerpo: z.string().min(1).describe('Texto completo del certificado, redactado en parrafos'),
+});
+
+/** Presupuesto medico: diagnostico y procedimientos propuestos con su monto. */
+export const PresupuestoMedicoSchema = z.object({
+  cedulaPaciente: z.string().describe('Cedula o ID del paciente, cadena vacia si no se menciona'),
+  nombrePaciente: z.string().describe('Nombre completo del paciente'),
+  fecha: z.string().describe('Fecha del presupuesto en formato dd/mm/aaaa'),
+  diagnostico: z.string().describe('Diagnostico o diagnosticos, separados por comas'),
+  procedimientos: z.array(z.object({
+    descripcion: z.string().min(1).describe('Nombre del procedimiento propuesto'),
+    monto: z.number().describe('Monto en pesos dominicanos. 0 si no se menciona precio'),
+  })).describe('Un elemento por procedimiento propuesto'),
+});
+
+/**
  * Registro central de tipos de documento estructurado.
  * Cada entrada asocia el esquema Zod con su system prompt; agregar un tipo
  * nuevo es añadir una entrada aquí, sin tocar el controlador.
@@ -57,6 +79,25 @@ REGLAS ESTRICTAS:
 3. NINGUNA palabra del dictado puede perderse. Todo fragmento de texto debe aparecer en 'contenido'.
 4. Respeta la separación en líneas del dictado: cada medicamento o instrucción en su propia línea.
 5. 'nombrePaciente' y 'fecha' se toman del contexto si están disponibles; si no, déjalos como cadena vacía. Nunca los inventes.`,
+  },
+  certificado: {
+    schema: CertificadoMedicoSchema,
+    systemPrompt: `Eres un medico redactando un certificado medico formal. A partir de lo que te describa el doctor, redacta el cuerpo del certificado en prosa, en tercera persona y con lenguaje clinico formal, listo para imprimir en papel membretado.
+
+REGLAS:
+1. No inventes diagnosticos, fechas, edades ni identificaciones que el doctor no haya mencionado.
+2. No escribas el encabezado de la clinica, ni el titulo CERTIFICADO MEDICO, ni la firma: la plantilla los agrega. Devuelve solo el texto del cuerpo.
+3. Si el doctor menciona nombre del paciente o fecha, extraelos tambien a sus campos; si no, dejalos como cadena vacia.`,
+  },
+  presupuesto: {
+    schema: PresupuestoMedicoSchema,
+    systemPrompt: `Eres un asistente que arma presupuestos medicos. Extrae del dictado del doctor el paciente, el diagnostico y los procedimientos propuestos con su costo.
+
+REGLAS:
+1. Cada procedimiento va en su propia entrada del arreglo, con su monto en numero (sin simbolos ni separadores de miles): "12 mil pesos" es 12000, "40mil$" es 40000.
+2. Si un procedimiento no trae precio, su monto es 0. Nunca inventes un precio.
+3. No calcules ni agregues el total: la plantilla lo suma sola.
+4. No inventes procedimientos ni diagnosticos que el doctor no haya mencionado.`,
   },
 } as const;
 

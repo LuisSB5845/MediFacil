@@ -1396,6 +1396,7 @@ export default function App() {
               {selectedPatient ? (
                 <PatientProfile 
                   patient={selectedPatient} 
+                  profile={profile}
                   onBack={() => setSelectedPatient(null)} 
                   onAddConsultation={() => setShowAddConsultation(true)}
                   onEditPatient={() => {

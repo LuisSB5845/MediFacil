@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
+  ChevronRight,
   Plus, 
   Trash2, 
   Eye, 
@@ -17,15 +18,19 @@ import {
   PenTool,
   CreditCard,
   FolderOpen,
+  FileText,
+  Pill,
+  FlaskConical,
   Menu,
   ShieldCheck,
   BriefcaseMedical
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { Patient, Consultation } from '../types';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { Patient, Consultation, ClinicalDocument, UserProfile } from '../types';
 import { cn } from '../lib/utils';
+import { DocumentViewerModal } from './DocumentViewerModal';
 
 interface PatientProfileProps {
   patient: Patient;
@@ -36,10 +41,13 @@ interface PatientProfileProps {
   onDeleteConsultation: (pid: string, cid: string) => void;
   onViewConsultation: (c: Consultation) => void;
   onCopyConsultation: (c: Consultation) => void;
+  /** Perfil del médico: alimenta el membrete de los documentos al verlos. */
+  profile?: UserProfile | null;
 }
 
 export const PatientProfile = ({
   patient,
+  profile,
   onBack,
   onAddConsultation,
   onEditPatient,
@@ -49,6 +57,32 @@ export const PatientProfile = ({
   onCopyConsultation
 }: PatientProfileProps) => {
   const [consultations, setConsultations] = useState<Consultation[]>([]);
+  const [documents, setDocuments] = useState<ClinicalDocument[]>([]);
+  const [docAbierto, setDocAbierto] = useState<ClinicalDocument | null>(null);
+  const [consultaPage, setConsultaPage] = useState(1);
+  const [docPage, setDocPage] = useState(1);
+
+  // Documentos emitidos a este paciente. Se filtra por nombre en cliente:
+  // clinical_documents guarda patientName, no el id del paciente, y un `where`
+  // extra exigiria un indice compuesto nuevo.
+  useEffect(() => {
+    if (!patient.doctorUid) return;
+    const q = query(
+      collection(db, 'clinical_documents'),
+      where('doctorUid', '==', patient.doctorUid),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const objetivo = patient.name.trim().toLowerCase();
+      setDocuments(
+        snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument))
+          .filter(d => (d.patientName || '').trim().toLowerCase() === objetivo)
+      );
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'clinical_documents');
+    });
+  }, [patient.doctorUid, patient.name]);
 
   useEffect(() => {
     const q = query(
@@ -61,6 +95,93 @@ export const PatientProfile = ({
       handleFirestoreError(error, OperationType.GET, `patients/${patient.id}/consultations`);
     });
   }, [patient.id]);
+
+  // --- Paginación de ambos listados del expediente ---
+  const CONSULTAS_POR_PAGINA = 6;
+  const DOCS_POR_PAGINA = 5;
+
+  const consultaPaginas = Math.max(1, Math.ceil(consultations.length / CONSULTAS_POR_PAGINA));
+  const consultaPageSafe = Math.min(consultaPage, consultaPaginas);
+  const consultasPagina = consultations.slice(
+    (consultaPageSafe - 1) * CONSULTAS_POR_PAGINA,
+    consultaPageSafe * CONSULTAS_POR_PAGINA
+  );
+
+  const docPaginas = Math.max(1, Math.ceil(documents.length / DOCS_POR_PAGINA));
+  const docPageSafe = Math.min(docPage, docPaginas);
+  const docsPagina = documents.slice(
+    (docPageSafe - 1) * DOCS_POR_PAGINA,
+    docPageSafe * DOCS_POR_PAGINA
+  );
+
+  const formatoFecha = (valor: any) => {
+    const d = valor?.toDate ? valor.toDate() : new Date(valor);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  /** Controles Anterior/Siguiente compartidos por los dos listados. */
+  const Paginador = ({
+    pagina,
+    paginas,
+    onCambio,
+    etiqueta,
+  }: {
+    pagina: number;
+    paginas: number;
+    onCambio: (p: number) => void;
+    etiqueta: string;
+  }) => (
+    <div className="flex items-center justify-between pt-1">
+      <button
+        onClick={() => onCambio(Math.max(1, pagina - 1))}
+        disabled={pagina === 1}
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white border border-outline-variant/30 text-xs font-bold text-[#191970] hover:bg-surface-container-low transition-colors disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <ChevronLeft className="w-4 h-4" /> Anterior
+      </button>
+      <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+        Página {pagina} de {paginas} · {etiqueta}
+      </span>
+      <button
+        onClick={() => onCambio(Math.min(paginas, pagina + 1))}
+        disabled={pagina === paginas}
+        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white border border-outline-variant/30 text-xs font-bold text-[#191970] hover:bg-surface-container-low transition-colors disabled:opacity-40 disabled:pointer-events-none"
+      >
+        Siguiente <ChevronRight className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  /** Primeras palabras de los hallazgos, cuando no hay diagnóstico escrito. */
+  const extracto = (texto: string, limite = 120) => {
+    const limpio = (texto || '').trim().replace(/\s+/g, ' ');
+    return limpio.length > limite ? limpio.slice(0, limite) + '…' : limpio;
+  };
+
+  const resumenDocumento = (doc: ClinicalDocument): string => {
+    const d: any = doc.structuredData;
+    if (!d) return extracto(doc.content || '', 90);
+    if (doc.certificationType === 'orden_lab') {
+      const n = (d.seleccionados || []).length;
+      return n > 0 ? `${n} estudio${n === 1 ? '' : 's'} solicitado${n === 1 ? '' : 's'}` : 'Sin estudios';
+    }
+    if (doc.certificationType === 'receta') return extracto(d.contenido || '', 90);
+    if (doc.certificationType === 'presupuesto') return extracto(d.diagnostico || '', 90);
+    return extracto(d.cuerpo || d.nombreMadre || doc.title || '', 90);
+  };
+
+  const tipoDocumento = (doc: ClinicalDocument) => {
+    if (doc.certificationType === 'receta') return { label: 'Receta Rx', Icono: Pill };
+    if (doc.certificationType === 'orden_lab') return { label: 'Laboratorio', Icono: FlaskConical };
+    if (doc.certificationType === 'birth' || doc.templateType === 'Constancia de Nacimiento') {
+      return { label: 'Constancia', Icono: FileText };
+    }
+    if (doc.certificationType === 'presupuesto' || doc.templateType === 'Presupuesto Médico') {
+      return { label: 'Presupuesto', Icono: FileText };
+    }
+    return { label: 'Certificado', Icono: FileText };
+  };
+
 
   return (
     <div className="space-y-8 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto">
@@ -201,7 +322,7 @@ export const PatientProfile = ({
         </div>
       </div>
 
-      {/* Consultation History */}
+      {/* Historial de Consultas — el nucleo del expediente, va primero */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -216,109 +337,166 @@ export const PatientProfile = ({
           </button>
         </div>
 
-        <div className="space-y-4">
-          {consultations.length > 0 ? (
-            consultations.map((consultation) => (
-              <div 
-                key={consultation.id}
-                className="group relative card-atelier p-8 bg-white border border-surface-container-high hover:border-primary/30 transition-all hover:shadow-lg overflow-hidden"
-              >
-                {/* Visual Indicator */}
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary/5 group-hover:bg-primary transition-colors" />
-                
-                <div className="flex flex-col md:flex-row gap-6 relative">
-                  <div className="w-12 h-12 bg-surface-low rounded-2xl flex items-center justify-center text-primary/40 shrink-0 border border-surface-container-high group-hover:bg-primary group-hover:text-white transition-all">
-                    <History className="w-6 h-6" />
+        {consultations.length > 0 ? (
+          <div className="space-y-3">
+            {consultasPagina.map(consultation => {
+              // El diagnostico manda; si no hay, se muestra el motivo/hallazgos.
+              const principal = (consultation.diagnosis || '').trim() || extracto(consultation.findings || '');
+              return (
+                <div
+                  key={consultation.id}
+                  className="group flex flex-col md:flex-row md:items-start justify-between gap-5 p-5 bg-white border border-surface-container-high rounded-2xl hover:border-primary/30 hover:shadow-lg transition-all"
+                >
+                  <div className="flex gap-5 min-w-0 flex-1">
+                    {/* Fecha, tipo y vitales */}
+                    <div className="w-28 shrink-0 space-y-2">
+                      <p className="text-xs font-black text-high-contrast whitespace-nowrap">
+                        {formatoFecha(consultation.date)}
+                      </p>
+                      <span className="inline-block px-2.5 py-1 rounded-full bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest border border-primary/10">
+                        {consultation.type}
+                      </span>
+                      {consultation.vitals?.bloodPressure && (
+                        <p className="text-[10px] font-bold text-high-contrast/40 flex items-center gap-1">
+                          <Activity className="w-3 h-3" /> PA {consultation.vitals.bloodPressure}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Contenido clinico */}
+                    <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+                      <p className="text-sm font-bold text-on-surface leading-relaxed group-hover:text-primary transition-colors">
+                        {principal || 'Consulta sin notas registradas'}
+                      </p>
+                      {consultation.vitals?.labGabinete && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-low text-[10px] font-bold text-high-contrast/50 border border-surface-container-high">
+                          <FlaskConical className="w-3 h-3" />
+                          {extracto(consultation.vitals.labGabinete, 60)}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  
-                  <div className="flex-1 space-y-6">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div>
-                        <h4 className="text-lg font-bold text-primary group-hover:text-secondary transition-colors mb-1">
-                          {consultation.title || "Consulta Médica"}
-                        </h4>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest bg-surface-low px-2 py-0.5 rounded border border-surface-container-high">
-                            {consultation.type || 'Especialidad'}
-                          </span>
-                          <p className="text-[10px] font-bold text-high-contrast/40 flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(consultation.date?.toDate?.() || consultation.date).toLocaleDateString()}
-                            <span className="mx-1 opacity-20">•</span>
-                            {new Date(consultation.date?.toDate?.() || consultation.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Action Buttons with VIBRANT COLORS - Always visible for better usability */}
-                      <div className="flex items-center gap-3 transition-opacity">
-                        <button 
-                          onClick={() => onCopyConsultation(consultation)}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 text-white font-black text-[10px] shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-emerald-400/20"
-                          title="Copiar contenido a nueva consulta"
-                        >
-                          <Copy className="w-4 h-4" />
-                          Copiar
-                        </button>
-                        <button 
-                          onClick={() => onViewConsultation(consultation)}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-[10px] shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-blue-500/20"
-                          title="Ver detalle completo"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Ver
-                        </button>
-                        <button 
-                          onClick={() => onDeleteConsultation(patient.id, consultation.id)}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white font-black text-[10px] shadow-lg shadow-red-500/30 hover:bg-red-600 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-red-400/20"
-                          title="Eliminar consulta"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Borrar
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-6 border-t border-surface-container-low/50">
-                      <div className="space-y-2">
-                        <p className="label-atelier text-high-contrast/30 uppercase tracking-widest text-[9px]">Hallazgos</p>
-                        <p className="body-atelier text-high-contrast text-xs line-clamp-2 italic">{consultation.findings}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="label-atelier text-high-contrast/30 uppercase tracking-widest text-[9px]">Diagnóstico</p>
-                        <p className="body-atelier text-primary font-bold text-xs line-clamp-2">{consultation.diagnosis}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="label-atelier text-high-contrast/30 uppercase tracking-widest text-[9px]">Laboratorio / Gabinete</p>
-                        <p className="body-atelier text-secondary font-bold text-xs line-clamp-2">{consultation.vitals?.labGabinete || 'Ninguno'}</p>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="label-atelier text-high-contrast/30 uppercase tracking-widest text-[9px]">Tratamiento</p>
-                        <p className="body-atelier text-high-contrast text-xs line-clamp-2">{consultation.plan}</p>
-                      </div>
-                    </div>
+                  {/* Acciones */}
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-start">
+                    <button
+                      onClick={() => onCopyConsultation(consultation)}
+                      title="Copiar contenido a nueva consulta"
+                      className="p-2 rounded-lg bg-surface-low text-high-contrast/50 hover:bg-primary/10 hover:text-primary transition-colors"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onViewConsultation(consultation)}
+                      title="Ver detalle completo"
+                      className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onDeleteConsultation(patient.id, consultation.id)}
+                      title="Eliminar consulta"
+                      className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="card-atelier p-16 text-center border-dashed border-2 bg-surface-low/30 border-surface-container-high">
-              <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-high-contrast/10 shadow-lg">
-                <FolderOpen className="w-10 h-10" />
-              </div>
-              <h4 className="title-atelier text-primary mb-2">Sin Registro Clínico</h4>
-              <p className="body-atelier text-high-contrast/60">No se han registrado consultas médicas para este expediente aún.</p>
-              <button 
-                onClick={onAddConsultation}
-                className="mt-6 text-primary font-black uppercase tracking-widest text-xs hover:underline flex items-center gap-2 mx-auto"
-              >
-                <Plus className="w-4 h-4" />
-                Registrar primera consulta
-              </button>
+              );
+            })}
+
+            {consultaPaginas > 1 && (
+              <Paginador
+                pagina={consultaPageSafe}
+                paginas={consultaPaginas}
+                onCambio={setConsultaPage}
+                etiqueta={`${consultations.length} consultas`}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="card-atelier p-16 text-center border-dashed border-2 bg-surface-low/30 border-surface-container-high">
+            <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-high-contrast/10 shadow-lg">
+              <FolderOpen className="w-10 h-10" />
             </div>
-          )}
-        </div>
+            <h4 className="title-atelier text-primary mb-2">Sin Registro Clínico</h4>
+            <p className="body-atelier text-high-contrast/60">No se han registrado consultas médicas para este expediente aún.</p>
+            <button
+              onClick={onAddConsultation}
+              className="mt-6 text-primary font-black uppercase tracking-widest text-xs hover:underline flex items-center gap-2 mx-auto"
+            >
+              <Plus className="w-4 h-4" />
+              Registrar primera consulta
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Documentos emitidos a este paciente */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="title-atelier text-2xl text-primary font-bold">Documentos</h3>
+          <span className="px-3 py-1 bg-surface-low rounded-full text-xs font-black text-high-contrast/30 border border-surface-container-high tracking-widest">
+            {documents.length}
+          </span>
+        </div>
+
+        {documents.length > 0 ? (
+          <div className="space-y-3">
+            {docsPagina.map(doc => {
+              const { label, Icono } = tipoDocumento(doc);
+              return (
+                <div
+                  key={doc.id}
+                  className="group flex items-center justify-between gap-5 p-5 bg-white border border-surface-container-high rounded-2xl hover:border-primary/30 hover:shadow-lg transition-all"
+                >
+                  <div className="flex items-center gap-5 min-w-0 flex-1">
+                    <p className="w-28 shrink-0 text-xs font-black text-high-contrast whitespace-nowrap">
+                      {formatoFecha(doc.createdAt)}
+                    </p>
+                    <span className="w-36 shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest border border-primary/10">
+                      <Icono className="w-3 h-3" /> {label}
+                    </span>
+                    <p className="min-w-0 flex-1 text-sm font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                      {resumenDocumento(doc)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setDocAbierto(doc)}
+                    title="Ver e imprimir"
+                    className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-colors"
+                  >
+                    <Eye className="w-4 h-4" /> Ver
+                  </button>
+                </div>
+              );
+            })}
+
+            {docPaginas > 1 && (
+              <Paginador
+                pagina={docPageSafe}
+                paginas={docPaginas}
+                onCambio={setDocPage}
+                etiqueta={`${documents.length} documentos`}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="card-atelier p-10 text-center border-dashed border-2 bg-surface-low/30 border-surface-container-high">
+            <p className="body-atelier text-high-contrast/50 text-sm">
+              Aún no se han emitido documentos para este paciente.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {docAbierto && (
+        <DocumentViewerModal
+          doc={docAbierto}
+          profile={profile ?? null}
+          onClose={() => setDocAbierto(null)}
+        />
+      )}
     </div>
   );
 };
