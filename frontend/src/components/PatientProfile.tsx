@@ -21,6 +21,7 @@ import {
   FileText,
   Pill,
   FlaskConical,
+  DollarSign,
   Menu,
   ShieldCheck,
   BriefcaseMedical
@@ -43,11 +44,14 @@ interface PatientProfileProps {
   onCopyConsultation: (c: Consultation) => void;
   /** Perfil del médico: alimenta el membrete de los documentos al verlos. */
   profile?: UserProfile | null;
+  /** Abre el modal de cobro rápido con este paciente ya seleccionado. */
+  onRegisterPayment?: () => void;
 }
 
 export const PatientProfile = ({
   patient,
   profile,
+  onRegisterPayment,
   onBack,
   onAddConsultation,
   onEditPatient,
@@ -77,7 +81,11 @@ export const PatientProfile = ({
       setDocuments(
         snapshot.docs
           .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument))
-          .filter(d => (d.patientName || '').trim().toLowerCase() === objetivo)
+          // El id es la union fiable; el nombre solo rescata los documentos
+          // anteriores a que se guardara patientId.
+          .filter(d => d.patientId
+            ? d.patientId === patient.id
+            : (d.patientName || '').trim().toLowerCase() === objetivo)
       );
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'clinical_documents');
@@ -229,6 +237,15 @@ export const PatientProfile = ({
                 </div>
               </div>
               <div className="flex gap-3">
+                {onRegisterPayment && (
+                  <button
+                    onClick={onRegisterPayment}
+                    className="px-5 py-2.5 rounded-2xl bg-emerald-50 text-emerald-700 font-bold text-sm border border-emerald-100 hover:bg-emerald-100 transition-all flex items-center gap-2"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    Registrar Cobro
+                  </button>
+                )}
                 <button onClick={onEditPatient} className="btn-primary flex items-center gap-2 group/btn">
                   <Edit3 className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
                   Modificar Perfil

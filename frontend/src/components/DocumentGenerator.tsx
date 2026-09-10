@@ -33,7 +33,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, ClinicalDocument } from '../types';
+import { UserProfile, ClinicalDocument, Patient } from '../types';
 import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -76,7 +76,11 @@ const PLANTILLAS: { id: PlantillaId; label: string }[] = [
   { id: 'presupuesto', label: 'Presupuesto Médico' },
 ];
 
-export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
+export const DocumentGenerator = ({ user, profile, patients = [] }: {
+  user: FirebaseUser | null;
+  profile: UserProfile | null;
+  patients?: Patient[];
+}) => {
   const [view, setView] = useState<DocView>('selection');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -119,6 +123,26 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
 
   const [plantilla, setPlantilla] = useState<PlantillaId>('certificado');
 
+  // Todo documento se archiva contra un paciente real, no contra un nombre
+  // escrito a mano: asi sigue encontrandose aunque despues lo renombren.
+  const [docPatient, setDocPatient] = useState<Patient | null>(null);
+  const [buscaPaciente, setBuscaPaciente] = useState('');
+  const [showDocPatientPicker, setShowDocPatientPicker] = useState(false);
+
+  const pacientesFiltrados = patients.filter(p =>
+    p.name.toLowerCase().includes(buscaPaciente.toLowerCase())
+  );
+
+  /** Al elegir paciente se prellena el campo de nombre de cada plantilla. */
+  const elegirPaciente = (p: Patient) => {
+    setDocPatient(p);
+    setShowDocPatientPicker(false);
+    setBuscaPaciente('');
+    setCertPaciente(p.name);
+    setPresPaciente(p.name);
+    setNac(prev => ({ ...prev, nombreMadre: p.name }));
+  };
+
   // Certificado médico narrativo
   const [certPaciente, setCertPaciente] = useState('');
   const [certFecha, setCertFecha] = useState(hoy);
@@ -157,6 +181,74 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
     diagnostico: presDiagnostico,
     procedimientos,
   };
+
+  /** Selector de paciente: el mismo en la vista de plantilla y en la de IA. */
+  const pacientePicker = () => (
+    <>
+                      <label className={LBL}>Paciente</label>
+                      <div className="flex gap-3">
+                        <div className="relative flex-1">
+                          <UserIcon className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+                          <input
+                            type="text"
+                            readOnly
+                            placeholder="Selecciona el paciente"
+                            className={INPUT + ' pl-14'}
+                            value={docPatient?.name || ''}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowDocPatientPicker(v => !v)}
+                          className="h-14 px-5 rounded-2xl bg-primary text-white text-xs font-black uppercase tracking-widest hover:bg-primary-container transition-all whitespace-nowrap"
+                        >
+                          {showDocPatientPicker ? 'Cerrar' : 'Buscar'}
+                        </button>
+                      </div>
+
+                      {showDocPatientPicker && (
+                        <div className="border border-surface-container-high rounded-2xl overflow-hidden bg-surface-low">
+                          <div className="relative p-3 border-b border-surface-container-high">
+                            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-high-contrast/20 w-4 h-4" />
+                            <input
+                              className="w-full h-10 pl-10 pr-4 rounded-xl bg-white border-none focus:ring-2 focus:ring-primary/10 text-sm"
+                              placeholder="Escriba el nombre del paciente..."
+                              type="text"
+                              autoFocus
+                              value={buscaPaciente}
+                              onChange={(e) => setBuscaPaciente(e.target.value)}
+                            />
+                          </div>
+                          <div className="max-h-[30vh] overflow-y-auto no-scrollbar p-2 space-y-1">
+                            {pacientesFiltrados.length > 0 ? (
+                              pacientesFiltrados.map(p => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => elegirPaciente(p)}
+                                  className="w-full p-3 flex items-center gap-3 rounded-xl hover:bg-primary-fixed transition-colors text-left group"
+                                >
+                                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                                    {p.name.split(' ').map(n => n[0]).join('')}
+                                  </div>
+                                  <p className="font-bold text-on-surface text-sm group-hover:text-primary">{p.name}</p>
+                                </button>
+                              ))
+                            ) : (
+                              <p className="py-8 text-center text-sm text-high-contrast/40 font-medium">
+                                No se encontraron pacientes.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {!docPatient && (
+                        <p className="text-[11px] text-high-contrast/40 px-1">
+                          El documento se archiva en el expediente de este paciente.
+                        </p>
+                      )}
+    </>
+  );
 
   /** Nombre de paciente y contenido con los que se guarda cada plantilla. */
   const resumenPlantilla = () => {
@@ -282,6 +374,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             subtitle: `Generado hoy • Plantilla: ${etiqueta}`,
             type: 'template',
             doctorUid: user.uid,
+            patientId: docPatient?.id || '',
             patientName: resumen.paciente,
             createdAt: serverTimestamp(),
             content: resumen.contenido,
@@ -320,7 +413,8 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
         // editable en la vista de plantilla con su vista previa en vivo.
         let titleText: string;
         // Nombre con el que se archiva: sin el, el documento queda huerfano.
-        const pacienteIA: string = (
+        // Manda el paciente seleccionado; lo que infiera la IA es solo respaldo.
+        const pacienteIA: string = docPatient?.name || (
           aiPlantilla === 'nacimiento' ? d.nombreMadre
           : aiPlantilla === 'presupuesto' ? d.nombrePaciente
           : d.paciente
@@ -370,6 +464,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
             certificationType: tipoIA,
             structuredData: d,
             doctorUid: user.uid,
+            patientId: docPatient?.id || '',
             patientName: pacienteIA,
             createdAt: serverTimestamp(),
             content: JSON.stringify(d, null, 2)
@@ -766,6 +861,10 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
 
                   <div className="space-y-10">
                     <div className="space-y-3">
+                      {pacientePicker()}
+                    </div>
+
+                    <div className="space-y-3">
                       <label className="text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1">Plantilla</label>
                       <div className="relative group">
                         <select
@@ -953,7 +1052,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                   <div className="pt-8">
                     <button 
                       onClick={handleGenerate}
-                      disabled={isGenerating || !resumenPlantilla().paciente.trim()}
+                      disabled={isGenerating || !docPatient || !resumenPlantilla().paciente.trim()}
                       className="w-full h-16 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/20 disabled:opacity-50"
                     >
                       <div className="relative">
@@ -1019,6 +1118,9 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                     <div className="space-y-8">
                       <div className="space-y-6">
                         <div className="space-y-2">
+                          <div className="space-y-3 pb-6">
+                            {pacientePicker()}
+                          </div>
                           <label className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest px-1">Plantilla a rellenar</label>
                           <div className="flex flex-col gap-2">
                             {PLANTILLAS.map(pl => (
@@ -1040,6 +1142,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                           <p className="text-[11px] text-high-contrast/40 px-1 pt-1">
                             La IA extrae los datos y deja la plantilla prellenada para que la revises antes de imprimir.
                           </p>
+
                         </div>
 
                         <div className="relative group">
@@ -1051,7 +1154,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                           />
                           <button 
                             onClick={handleGenerate}
-                            disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
+                            disabled={isGenerating || !docPatient || (!aiPrompt.trim() && !extractedText)}
                             className="absolute bottom-6 right-6 w-12 h-12 bg-primary text-white rounded-2xl flex items-center justify-center hover:bg-primary-container transition-all shadow-xl shadow-primary/30 group-hover:scale-105 disabled:opacity-50 disabled:scale-100"
                           >
                             {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <ArrowLeft className="w-6 h-6 rotate-[90deg]" />}
@@ -1099,7 +1202,7 @@ export const DocumentGenerator = ({ user, profile }: { user: FirebaseUser | null
                   <div className="pt-12">
                     <button 
                       onClick={handleGenerate}
-                      disabled={isGenerating || (!aiPrompt.trim() && !extractedText)}
+                      disabled={isGenerating || !docPatient || (!aiPrompt.trim() && !extractedText)}
                       className="w-full h-18 bg-primary text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-primary-container transition-all shadow-xl shadow-primary/30 py-5 disabled:opacity-50"
                     >
                       {isGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}

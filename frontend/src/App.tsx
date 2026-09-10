@@ -92,6 +92,7 @@ import {
   CreditCard,
   FolderOpen,
   Pill,
+  DollarSign,
   Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -792,6 +793,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
     { id: 'patients', label: 'Pacientes', icon: Users },
     { id: 'generate', label: 'Generar Documento', icon: FileText },
     { id: 'recetas', label: 'Recetas', icon: Pill },
+    { id: 'finanzas', label: 'Finanzas', icon: DollarSign },
     { id: 'assistant', label: 'Asistente de IA', icon: Bot },
     { id: 'plans', label: 'Planes de Pago', icon: CreditCard },
     ...(isAdmin ? [{ id: 'admin', label: 'Gestión de Usuarios', icon: ShieldCheck }] : []),
@@ -953,6 +955,8 @@ import { AdminPanel } from './pages/AdminPanel';
 import { ConsultationSearchModal } from './components/ConsultationSearchModal';
 import { RecetaRapidaModal } from './components/RecetaRapidaModal';
 import { RecetasScreen } from './pages/RecetasScreen';
+import { FinancesScreen } from './pages/FinancesScreen';
+import { QuickPaymentModal } from './components/QuickPaymentModal';
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -971,6 +975,14 @@ export default function App() {
   const [showPatientSearchModal, setShowPatientSearchModal] = useState(false);
   const [showConsultationSearchModal, setShowConsultationSearchModal] = useState(false);
   const [showRecetaRapida, setShowRecetaRapida] = useState(false);
+  const [showQuickPayment, setShowQuickPayment] = useState(false);
+  // Cobro opcional asociado a la consulta que se esta registrando.
+  const [cobroActivo, setCobroActivo] = useState(false);
+  const [cobro, setCobro] = useState({
+    amount: '',
+    paymentMethod: 'cash' as 'cash' | 'card' | 'transfer' | 'insurance',
+    status: 'completed' as 'completed' | 'pending',
+  });
   const [showViewConsultation, setShowViewConsultation] = useState(false);
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1224,12 +1236,28 @@ export default function App() {
     }
 
     try {
-      await addDoc(collection(db, 'patients', selectedPatient.id, 'consultations'), {
+      const consultaRef = await addDoc(collection(db, 'patients', selectedPatient.id, 'consultations'), {
         ...newConsultation,
         doctorUid: user.uid,
         patientId: selectedPatient.id,
         date: serverTimestamp()
       });
+
+      // Cobro opcional de la consulta, vinculado por consultationId.
+      const montoCobro = Number(cobro.amount);
+      if (cobroActivo && montoCobro > 0) {
+        await addDoc(collection(db, 'consultation_payments'), {
+          doctorUid: user.uid,
+          patientId: selectedPatient.id,
+          patientName: selectedPatient.name,
+          consultationId: consultaRef.id,
+          concept: newConsultation.type || 'Consulta',
+          amount: montoCobro,
+          paymentMethod: cobro.paymentMethod,
+          status: cobro.status,
+          date: serverTimestamp(),
+        });
+      }
       
       // Actualización atómica de estadísticas (Evita N+1 y descargas masivas)
       const todayStr = new Date().toISOString().split('T')[0];
@@ -1251,6 +1279,8 @@ export default function App() {
       await incrementConsultationUsage(user.uid, profile.consultationsThisMonth || 0);
 
       setShowAddConsultation(false);
+      setCobroActivo(false);
+      setCobro({ amount: '', paymentMethod: 'cash', status: 'completed' });
       setNewConsultation({
         type: 'Consulta General',
         title: '',
@@ -1365,6 +1395,8 @@ export default function App() {
                   ? "Generar Documento"
                   : activeTab === 'recetas'
                   ? "Recetas"
+                  : activeTab === 'finanzas'
+                  ? "Finanzas & Reportes"
                   : activeTab === 'assistant'
                     ? "Asistente de IA" 
                     : activeTab === 'plans'
@@ -1376,6 +1408,8 @@ export default function App() {
               ? selectedPatient.name
               : activeTab === 'recetas'
                 ? "Historial de recetas emitidas"
+                : activeTab === 'finanzas'
+                  ? "Cobros e ingresos del consultorio"
                 : undefined
           }
           search={search}
@@ -1397,6 +1431,7 @@ export default function App() {
                 <PatientProfile 
                   patient={selectedPatient} 
                   profile={profile}
+                  onRegisterPayment={() => setShowQuickPayment(true)}
                   onBack={() => setSelectedPatient(null)} 
                   onAddConsultation={() => setShowAddConsultation(true)}
                   onEditPatient={() => {
@@ -1527,8 +1562,9 @@ export default function App() {
                         onDateFilterChange={setPatientDateFilter}
                       />
                     } />
-                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} />} />
+                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} patients={patients} />} />
                     <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} onDeleteReceta={handleDeleteReceta} />} />
+                    <Route path="/finanzas" element={<FinancesScreen doctorUid={user?.uid || ''} profile={profile} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
                     <Route path="/plans" element={<PaymentPlans user={profile} />} />
                     <Route path="/settings" element={<SettingsScreen user={profile} onUpdate={handleUpdateProfile} />} />
@@ -1774,6 +1810,61 @@ export default function App() {
                     onChange={(e) => setNewConsultation({ ...newConsultation, plan: e.target.value })}
                   />
                 </div>
+                {/* Cobro de la consulta — opcional */}
+                <div className="p-5 rounded-2xl border border-surface-container-high bg-surface-low/50 space-y-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cobroActivo}
+                      onChange={(e) => setCobroActivo(e.target.checked)}
+                      className="w-4 h-4 accent-[#191970] cursor-pointer"
+                    />
+                    <span className="flex items-center gap-2 text-sm font-bold text-high-contrast">
+                      <DollarSign className="w-4 h-4 text-emerald-600" />
+                      Registrar cobro de esta consulta
+                    </span>
+                  </label>
+
+                  {cobroActivo && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <label className="label-atelier text-high-contrast/40 px-1 text-[10px] uppercase tracking-widest">Monto (RD$)</label>
+                        <input
+                          className="input-field w-full"
+                          type="number"
+                          min="0"
+                          placeholder="2500"
+                          value={cobro.amount}
+                          onChange={(e) => setCobro({ ...cobro, amount: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="label-atelier text-high-contrast/40 px-1 text-[10px] uppercase tracking-widest">Método</label>
+                        <select
+                          className="input-field w-full"
+                          value={cobro.paymentMethod}
+                          onChange={(e) => setCobro({ ...cobro, paymentMethod: e.target.value as typeof cobro.paymentMethod })}
+                        >
+                          <option value="cash">Efectivo</option>
+                          <option value="card">Tarjeta</option>
+                          <option value="transfer">Transferencia</option>
+                          <option value="insurance">Seguro Médico</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="label-atelier text-high-contrast/40 px-1 text-[10px] uppercase tracking-widest">Estado</label>
+                        <select
+                          className="input-field w-full"
+                          value={cobro.status}
+                          onChange={(e) => setCobro({ ...cobro, status: e.target.value as typeof cobro.status })}
+                        >
+                          <option value="completed">Pagado</option>
+                          <option value="pending">Pendiente</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="p-8 bg-surface-high flex gap-4">
                 <button onClick={() => setShowAddConsultation(false)} className="flex-1 btn-secondary text-xs">Cancelar</button>
@@ -2009,7 +2100,16 @@ export default function App() {
           </div>
         )}
 
-        {showRecetaRapida && user && (
+        {showQuickPayment && user && (
+        <QuickPaymentModal
+          patients={patients}
+          doctorUid={user.uid}
+          paciente={selectedPatient}
+          onClose={() => setShowQuickPayment(false)}
+        />
+      )}
+
+      {showRecetaRapida && user && (
           <RecetaRapidaModal
             patients={patients}
             profile={profile}

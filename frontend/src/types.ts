@@ -127,6 +127,21 @@ export type CertificationType =
   | 'certificado'
   | 'presupuesto';
 
+/** Cobro de consultorio: puede ir atado a una consulta o ser independiente. */
+export interface PaymentRecord {
+  id: string;
+  doctorUid: string;
+  patientId: string;
+  patientName: string;
+  consultationId?: string;
+  concept: string;
+  amount: number;
+  paymentMethod: 'cash' | 'card' | 'transfer' | 'insurance';
+  status: 'completed' | 'pending';
+  date: any;
+  notes?: string;
+}
+
 export interface ClinicalDocument {
   id: string;
   title: string;
@@ -134,6 +149,8 @@ export interface ClinicalDocument {
   type: 'ai' | 'template' | 'structured_certification';
   doctorUid: string;
   patientName?: string;
+  /** Id del paciente. Los documentos viejos solo tienen el nombre. */
+  patientId?: string;
   createdAt: any;
   content: string;
   structuredData?: NarrativeCertificationData | BirthCertificationData | RecetaRxData | OrdenLabData;
