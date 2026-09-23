@@ -279,13 +279,22 @@ export const getAIUsage = async (req: express.Request, res: express.Response) =>
     const limit = AI_LIMITS[plan] ?? AI_LIMITS.free;
 
     const usageDoc = await db.collection('ai_usage').doc(userId).get();
-    const todayCount: number = usageDoc.data()?.[today] || 0;
+    const delDia = usageDoc.data()?.[today];
+    // Los registros viejos guardaban un numero suelto; los nuevos, una bolsa.
+    const usados = typeof delDia === 'number'
+      ? { chat: delDia, docs: 0 }
+      : { chat: delDia?.chat || 0, docs: delDia?.docs || 0 };
+    const todayCount: number = usados.chat + usados.docs;
 
     res.json({
       plan,
       used: todayCount,
       limit,
       remaining: Math.max(0, limit - todayCount),
+      bolsas: {
+        chat: { used: usados.chat, limit, remaining: Math.max(0, limit - usados.chat) },
+        docs: { used: usados.docs, limit, remaining: Math.max(0, limit - usados.docs) },
+      },
       resetAt: 'midnight UTC',
     });
   } catch (err: any) {

@@ -15,7 +15,7 @@ export const PLAN_LIMITS: Record<PlanType, UsageLimits> = {
     maxPatients: 20,
     maxConsultations: Infinity,
     maxDocuments: 5,
-    maxAIMessages: 20
+    maxAIMessages: 3   // por día y por bolsa, lo aplica el backend
   },
   pro: { 
     maxPatients: Infinity,
@@ -37,7 +37,6 @@ export interface UserProfileWithUsage {
   plan?: PlanType;
   consultationsThisMonth?: number;
   documentsThisMonth?: number;
-  aiMessagesThisMonth?: number;
   usageResetDate?: string;
   totalPatientsCount?: number;
 }
@@ -59,7 +58,10 @@ export function canAddPatient(user: UserProfileWithUsage | null, currentCount: n
 }
 
 /**
- * Checks if the user can use AI messages.
+ * La cuota de IA la lleva el backend por día y por bolsa ('docs' y 'chat'),
+ * y responde 429 al agotarse. El cliente ya no puede contarla: el campo que
+ * usaba era escribible desde el navegador. Esta función solo distingue a
+ * quienes no tienen tope.
  */
 export function canUseAI(user: UserProfileWithUsage | null): { allowed: boolean; remaining: number; limit: number } {
   if (!user) return { allowed: false, remaining: 0, limit: 0 };
@@ -68,13 +70,8 @@ export function canUseAI(user: UserProfileWithUsage | null): { allowed: boolean;
     return { allowed: true, remaining: Infinity, limit: Infinity };
   }
 
-  const limits = PLAN_LIMITS[user.plan || 'free'];
-  const currentUsage = user.aiMessagesThisMonth || 0;
-
-  const remaining = Math.max(0, limits.maxAIMessages - currentUsage);
-  const allowed = currentUsage < limits.maxAIMessages;
-
-  return { allowed, remaining, limit: limits.maxAIMessages };
+  // El backend tiene la última palabra; aquí no se bloquea por adelantado.
+  return { allowed: true, remaining: Infinity, limit: PLAN_LIMITS.free.maxAIMessages };
 }
 
 /**
@@ -99,49 +96,12 @@ export function canCreateConsultation(user: UserProfileWithUsage | null): { allo
 }
 
 /**
- * Increments AI message usage.
- */
-export async function incrementAIUsage(uid: string, currentUsage: number): Promise<void> {
-  if (!uid) return;
-  await updateDoc(doc(db, 'users', uid), {
-    aiMessagesThisMonth: (currentUsage || 0) + 1,
-  });
-}
-
-/**
  * Increments consultation usage.
  */
 export async function incrementConsultationUsage(uid: string, currentUsage: number): Promise<void> {
   if (!uid) return;
   await updateDoc(doc(db, 'users', uid), {
     consultationsThisMonth: (currentUsage || 0) + 1,
-  });
-}
-
-/**
- * Checks if monthly usage should be reset.
- */
-export function shouldResetMonthlyUsage(usageResetDate: string | undefined): boolean {
-  if (!usageResetDate) return true;
-  const resetDate = new Date(usageResetDate);
-  const now = new Date();
-  return now >= resetDate;
-}
-
-/**
- * Resets monthly usage counters.
- */
-export async function resetMonthlyUsage(uid: string): Promise<void> {
-  const nextReset = new Date();
-  nextReset.setMonth(nextReset.getMonth() + 1);
-  nextReset.setDate(1);
-  nextReset.setHours(0, 0, 0, 0);
-
-  await updateDoc(doc(db, 'users', uid), {
-    consultationsThisMonth: 0,
-    documentsThisMonth: 0,
-    aiMessagesThisMonth: 0,
-    usageResetDate: nextReset.toISOString(),
   });
 }
 

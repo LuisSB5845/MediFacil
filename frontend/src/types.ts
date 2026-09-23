@@ -69,7 +69,6 @@ export interface UserProfile {
   doctorLogoUrl?: string;
   consultationsThisMonth?: number;
   documentsThisMonth?: number;
-  aiMessagesThisMonth?: number;
   usageResetDate?: string;
   usageLastReset?: string;
   gender?: 'male' | 'female';
