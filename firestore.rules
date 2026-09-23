@@ -73,11 +73,30 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    // Campos que solo el backend puede escribir (firebase-admin se salta las
+    // reglas). El cliente los lee, pero no los toca: de lo contrario cualquiera
+    // se asigna plan 'pro' o pone sus contadores en cero desde la consola.
+    function camposDeFacturacionIntactos() {
+      // diff().affectedKeys() cubre tambien los campos que aun no existen en el
+      // documento: comparar resource.data.X == request.resource.data.X deja
+      // pasar la escritura cuando X es null en el original.
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['plan', 'consultationsThisMonth', 'documentsThisMonth',
+                 'usageResetDate', 'aiMessagesThisMonth']);
+    }
+
+    // Un perfil nuevo nace siempre en el plan gratuito y con los contadores a cero.
+    function perfilNuevoEsGratuito(data) {
+      return data.plan == 'free' &&
+             data.consultationsThisMonth == 0 &&
+             data.documentsThisMonth == 0;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && (!('role' in request.resource.data) || request.resource.data.role == 'doctor' || isAdmin());
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && perfilNuevoEsGratuito(request.resource.data) && (!('role' in request.resource.data) || request.resource.data.role == 'doctor' || isAdmin());
       // Admin bypasses all checks for update
-      allow update: if isAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin()));
+      allow update: if isAdmin() || (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role && camposDeFacturacionIntactos());
       allow delete: if isAdmin();
     }
 

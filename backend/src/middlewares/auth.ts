@@ -2,8 +2,17 @@ import express from 'express';
 import { admin, db } from '../config/firebase.js';
 import logger from '../utils/logger.js';
 
+/**
+ * Cuota diaria de IA, en dos bolsas independientes:
+ *  - 'docs'  → emision de documentos con IA (/generate-certification)
+ *  - 'chat'  → asistente, analisis de notas e imagenes
+ * Separadas para que gastar el dia emitiendo recetas no deje al medico sin
+ * asistente, y viceversa.
+ */
+type BolsaIA = 'docs' | 'chat';
+
 const AI_LIMITS: Record<string, number> = {
-  free: 10,
+  free: 3,
   pro: 100,
   pro_clinica: 500,
 };
@@ -58,7 +67,8 @@ export const requireAdmin = (req: express.Request, res: express.Response, next: 
   }
 };
 
-export const checkAIQuota = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const checkAIQuota = (bolsa: BolsaIA = 'chat') =>
+  async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (!db) {
     logger.warn("Saltando checkAIQuota porque la base de datos no está disponible.");
     return next();
@@ -83,12 +93,20 @@ export const checkAIQuota = async (req: express.Request, res: express.Response, 
 
     const usageDoc = await usageRef.get();
     const usageData = usageDoc.data() || {};
-    const todayCount: number = usageData[today] || 0;
+    // Formato nuevo: { '2026-09-23': { docs: 2, chat: 1 } }.
+    // Los documentos viejos guardaban un numero suelto por dia.
+    const delDia = usageData[today];
+    const todayCount: number = typeof delDia === 'number'
+      ? (bolsa === 'chat' ? delDia : 0)
+      : (delDia?.[bolsa] || 0);
 
     if (todayCount >= limit) {
-      logger.warn(`Quota excedida para usuario ${userId} (plan: ${plan}, usado: ${todayCount}/${limit})`);
+      logger.warn(`Quota excedida para usuario ${userId} (bolsa: ${bolsa}, plan: ${plan}, usado: ${todayCount}/${limit})`);
       return res.status(429).json({
-        error: 'Límite diario de IA alcanzado.',
+        error: bolsa === 'docs'
+          ? 'Alcanzaste el límite diario de documentos con IA. Puedes seguir emitiéndolos a mano.'
+          : 'Alcanzaste el límite diario del asistente de IA.',
+        bolsa,
         limit,
         used: todayCount,
         plan,
@@ -96,9 +114,12 @@ export const checkAIQuota = async (req: express.Request, res: express.Response, 
       });
     }
 
-    await usageRef.set({ [today]: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    await usageRef.set(
+      { [today]: { [bolsa]: admin.firestore.FieldValue.increment(1) } },
+      { merge: true }
+    );
 
-    (req as any).aiQuota = { plan, used: todayCount + 1, limit };
+    (req as any).aiQuota = { plan, used: todayCount + 1, limit, bolsa };
     next();
   } catch (err: any) {
     logger.error('Error verificando quota de IA:', err.message);
@@ -107,3 +128,4 @@ export const checkAIQuota = async (req: express.Request, res: express.Response, 
 };
 
 export { AI_LIMITS };
+export type { BolsaIA };

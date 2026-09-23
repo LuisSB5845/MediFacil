@@ -41,7 +41,7 @@ import { db } from '../lib/firebase';
 import { UserProfile, Chat, Message } from '../types';
 import { cn } from '../lib/utils';
 import { createChat } from '../lib/ai';
-import { canUseAI, incrementAIUsage } from '../lib/usageLimits';
+import { canUseAI } from '../lib/usageLimits';
 
 export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, profile: UserProfile | null }) => {
   // State for Chats
@@ -188,7 +188,6 @@ export const AIAssistant = ({ user, profile }: { user: FirebaseUser | null, prof
       });
 
       if (profile) {
-        await incrementAIUsage(user.uid, profile.aiMessagesThisMonth || 0);
       }
     } catch (error: any) {
       console.error("AI Assistant Error:", error);

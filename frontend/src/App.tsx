@@ -105,10 +105,7 @@ import {
   canUseAI, 
   canAddPatient,
   canCreateConsultation,
-  incrementAIUsage, 
   incrementConsultationUsage,
-  resetMonthlyUsage, 
-  shouldResetMonthlyUsage,
   formatUsageDisplay
 } from './lib/usageLimits';
 
@@ -1049,27 +1046,15 @@ export default function App() {
               updatePayload.photoURL = firebaseUser.photoURL || existingData.photoURL;
             }
 
-            if (ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) && existingData.role !== 'admin') {
-              needsUpdate = true;
-              updatePayload.role = 'admin';
-            }
+            // El rol ya no se asigna desde el cliente: las reglas exigen que no
+            // cambie en un update del propio usuario. Un admin se designa con el
+            // custom claim (request.auth.token.admin), que solo pone el backend.
 
-            if (shouldResetMonthlyUsage(existingData.usageLastReset || existingData.usageResetDate)) {
-               await resetMonthlyUsage(firebaseUser.uid);
-               return; // El reset disparará de nuevo este onSnapshot
-            }
 
             if (needsUpdate) {
               await updateDoc(userRef, updatePayload);
             }
 
-            // Detección de éxito de pago (Legacy para URL, pero ahora onSnapshot lo captará del Webhook)
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('payment_success') === 'true' && existingData.plan === 'free') {
-              await updateDoc(userRef, { plan: 'pro' });
-              window.history.replaceState({}, document.title, window.location.pathname);
-              alert("¡Felicidades! Tu plan ha sido actualizado a Pro exitosamente.");
-            }
 
             setProfile(existingData);
           } else {
@@ -1080,10 +1065,9 @@ export default function App() {
               email: firebaseUser.email || '',
               photoURL: firebaseUser.photoURL || '',
               plan: 'free',
-              role: ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase().trim()) ? 'admin' : 'doctor',
+              role: 'doctor',
               consultationsThisMonth: 0,
               documentsThisMonth: 0,
-              aiMessagesThisMonth: 0,
               usageResetDate: new Date(
                 new Date().getFullYear(), 
                 new Date().getMonth() + 1, 

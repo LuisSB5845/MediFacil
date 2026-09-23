@@ -5,10 +5,10 @@ import { validate } from '../middlewares/validation.js';
 
 const router = express.Router();
 
-router.post('/analyze', authenticateUser, checkAIQuota, validate(AISchema), analyzeNotes);
-router.post('/chat', authenticateUser, checkAIQuota, chatWithAI);
-router.post('/analyze-image', authenticateUser, checkAIQuota, analyzeImage);
-router.post('/generate-certification', authenticateUser, checkAIQuota, generateCertification);
+router.post('/analyze', authenticateUser, checkAIQuota('chat'), validate(AISchema), analyzeNotes);
+router.post('/chat', authenticateUser, checkAIQuota('chat'), chatWithAI);
+router.post('/analyze-image', authenticateUser, checkAIQuota('chat'), analyzeImage);
+router.post('/generate-certification', authenticateUser, checkAIQuota('docs'), generateCertification);
 router.get('/usage', authenticateUser, getAIUsage);
 
 export default router;
