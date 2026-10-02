@@ -91,7 +91,6 @@ import {
   PenTool,
   CreditCard,
   FolderOpen,
-  Pill,
   DollarSign,
   Menu
 } from 'lucide-react';
@@ -789,7 +788,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Pacientes', icon: Users },
     { id: 'generate', label: 'Generar Documento', icon: FileText },
-    { id: 'recetas', label: 'Recetas', icon: Pill },
+    { id: 'recetas', label: 'Documentos', icon: FileText },
     { id: 'finanzas', label: 'Finanzas', icon: DollarSign },
     { id: 'assistant', label: 'Asistente de IA', icon: Bot },
     { id: 'plans', label: 'Planes de Pago', icon: CreditCard },
@@ -950,7 +949,6 @@ import { Dashboard } from './pages/Dashboard';
 import { SettingsScreen } from './pages/SettingsScreen';
 import { AdminPanel } from './pages/AdminPanel';
 import { ConsultationSearchModal } from './components/ConsultationSearchModal';
-import { RecetaRapidaModal } from './components/RecetaRapidaModal';
 import { RecetasScreen } from './pages/RecetasScreen';
 import { FinancesScreen } from './pages/FinancesScreen';
 import { QuickPaymentModal } from './components/QuickPaymentModal';
@@ -971,7 +969,8 @@ export default function App() {
   const [showEditPatient, setShowEditPatient] = useState(false);
   const [showPatientSearchModal, setShowPatientSearchModal] = useState(false);
   const [showConsultationSearchModal, setShowConsultationSearchModal] = useState(false);
-  const [showRecetaRapida, setShowRecetaRapida] = useState(false);
+  /** Atajo del Dashboard: abre el generador directamente en la receta. */
+  const [recetaDirecta, setRecetaDirecta] = useState(false);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   // Cobro opcional asociado a la consulta que se esta registrando.
   const [cobroActivo, setCobroActivo] = useState(false);
@@ -1378,7 +1377,7 @@ export default function App() {
                 : activeTab === 'generate'
                   ? "Generar Documento"
                   : activeTab === 'recetas'
-                  ? "Recetas"
+                  ? "Documentos"
                   : activeTab === 'finanzas'
                   ? "Finanzas & Reportes"
                   : activeTab === 'assistant'
@@ -1391,7 +1390,7 @@ export default function App() {
             selectedPatient
               ? selectedPatient.name
               : activeTab === 'recetas'
-                ? "Historial de recetas emitidas"
+                ? "Todos los documentos emitidos"
                 : activeTab === 'finanzas'
                   ? "Cobros e ingresos del consultorio"
                 : undefined
@@ -1493,7 +1492,7 @@ export default function App() {
                           });
                           setShowAddConsultation(true);
                         }}
-                        onQuickRx={() => setShowRecetaRapida(true)}
+                        onQuickRx={() => { setRecetaDirecta(true); setActiveTab('generate'); }}
                         search={search}
                         onSearchChange={setSearch}
                         user={profile}
@@ -1546,7 +1545,16 @@ export default function App() {
                         onDateFilterChange={setPatientDateFilter}
                       />
                     } />
-                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} patients={patients} />} />
+                    <Route path="/generate" element={
+                      <DocumentGenerator
+                        user={user}
+                        profile={profile}
+                        patients={patients}
+                        onVerDocumentos={() => setActiveTab('recetas')}
+                        plantillaInicial={recetaDirecta ? 'receta' : undefined}
+                        onVolver={recetaDirecta ? () => { setRecetaDirecta(false); setActiveTab('dashboard'); } : undefined}
+                      />
+                    } />
                     <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} onDeleteReceta={handleDeleteReceta} />} />
                     <Route path="/finanzas" element={<FinancesScreen doctorUid={user?.uid || ''} profile={profile} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
@@ -2092,15 +2100,6 @@ export default function App() {
           onClose={() => setShowQuickPayment(false)}
         />
       )}
-
-      {showRecetaRapida && user && (
-          <RecetaRapidaModal
-            patients={patients}
-            profile={profile}
-            doctorUid={user.uid}
-            onClose={() => setShowRecetaRapida(false)}
-          />
-        )}
 
         {showConsultationSearchModal && selectedPatient && (
           <ConsultationSearchModal 

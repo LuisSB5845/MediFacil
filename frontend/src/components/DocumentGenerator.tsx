@@ -33,7 +33,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, ClinicalDocument, Patient } from '../types';
+import { UserProfile, ClinicalDocument, Patient, CertificationType, RecetaRxData, OrdenLabData } from '../types';
+import { etiquetaDocumento } from '../lib/documentTypes';
+import { OrdenLabCampos } from './OrdenLabCampos';
+import { RecetaRxTemplate } from './templates/RecetaRxTemplate';
+import { OrdenLabTemplate } from './templates/OrdenLabTemplate';
 import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -56,32 +60,57 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 
 type DocView = 'selection' | 'template' | 'ai' | 'history';
 
-/** Las tres plantillas membretadas de la consulta. */
-type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto';
+/** Las plantillas membretadas de la consulta. */
+export type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto' | 'receta' | 'orden_lab';
+
+/** Las que la IA sabe rellenar. Receta usa su propia mejora de texto, y la
+ *  orden de laboratorio es seleccion manual de estudios. */
+type PlantillaIA = 'certificado' | 'nacimiento' | 'presupuesto';
 
 /** Estilos compartidos por los campos de las plantillas. */
 const LBL = 'text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1';
 const INPUT = 'w-full h-14 px-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white';
 
 /** Tipo de documento estructurado que pide cada plantilla al backend. */
-const AI_TARGET: Record<PlantillaId, 'certificado' | 'birth' | 'presupuesto'> = {
+const AI_TARGET: Record<PlantillaIA, 'certificado' | 'birth' | 'presupuesto'> = {
   certificado: 'certificado',
   nacimiento: 'birth',
   presupuesto: 'presupuesto',
 };
 
+/** Tipo con el que se archiva cada plantilla. La etiqueta visible es aparte. */
+const PLANTILLA_TIPO: Record<PlantillaId, CertificationType> = {
+  certificado: 'certificado',
+  nacimiento: 'birth',
+  presupuesto: 'presupuesto',
+  receta: 'receta',
+  orden_lab: 'orden_lab',
+};
+
+/** Plantillas que la IA puede rellenar desde una descripcion libre. */
+const PLANTILLAS_IA: PlantillaIA[] = ['certificado', 'nacimiento', 'presupuesto'];
+
 const PLANTILLAS: { id: PlantillaId; label: string }[] = [
+  { id: 'receta', label: 'Receta Rx' },
+  { id: 'orden_lab', label: 'Orden de Laboratorio' },
   { id: 'certificado', label: 'Certificado Médico' },
   { id: 'nacimiento', label: 'Constancia de Nacimiento' },
   { id: 'presupuesto', label: 'Presupuesto Médico' },
 ];
 
-export const DocumentGenerator = ({ user, profile, patients = [] }: {
+export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumentos, plantillaInicial, onVolver }: {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   patients?: Patient[];
+  /** Lleva a la pestana Documentos, el historial unico con filtros. */
+  onVerDocumentos?: () => void;
+  /** Abre directamente esta plantilla, saltando la pantalla de seleccion. */
+  plantillaInicial?: PlantillaId;
+  /** Si viene, se vuelve ahi tras guardar: el atajo del Dashboard no deja
+   *  varado al doctor en otra pantalla. */
+  onVolver?: () => void;
 }) => {
-  const [view, setView] = useState<DocView>('selection');
+  const [view, setView] = useState<DocView>(plantillaInicial ? 'template' : 'selection');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
@@ -107,8 +136,9 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     return onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument))
-        // Las recetas Rx tienen su propio flujo (Receta Rápida) y no se abren aquí.
-        .filter(doc => doc.certificationType !== 'receta' && doc.certificationType !== 'orden_lab');
+        // Recetas y ordenes se listan tambien: son documentos como los demas y
+        // el doctor espera ver aqui lo ultimo que emitio, sea del tipo que sea.
+        ;
       setAllDocuments(docs);
       setRecentDocuments(docs.slice(0, 5));
     }, (error) => {
@@ -121,11 +151,45 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
   // --- Plantillas: las tres del papel membretado de la consulta ---
   const hoy = new Date().toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  const [plantilla, setPlantilla] = useState<PlantillaId>('certificado');
+  const [plantilla, setPlantilla] = useState<PlantillaId>(plantillaInicial || 'certificado');
+
+  // Receta Rx: texto libre, con mejora opcional por IA.
+  const [recetaFecha, setRecetaFecha] = useState(hoy);
+  const [recetaContenido, setRecetaContenido] = useState('');
+  const [mejorandoReceta, setMejorandoReceta] = useState(false);
+
+  // Orden de laboratorio: seleccion manual de estudios, sin IA.
+  const [labFecha, setLabFecha] = useState(hoy);
+  const [labSeleccionados, setLabSeleccionados] = useState<string[]>([]);
+  const [labOtrosRadiografias, setLabOtrosRadiografias] = useState('');
+  const [labOtrosEstudios, setLabOtrosEstudios] = useState('');
+  const [labOtros, setLabOtros] = useState('');
+
+  const toggleEstudio = (item: string) =>
+    setLabSeleccionados(prev =>
+      prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
+    );
+
 
   // Todo documento se archiva contra un paciente real, no contra un nombre
   // escrito a mano: asi sigue encontrandose aunque despues lo renombren.
   const [docPatient, setDocPatient] = useState<Patient | null>(null);
+  /** Nombre del paciente elegido, que es como se imprime en las plantillas. */
+  const docPatientNombre = docPatient?.name || '';
+  const recetaData: RecetaRxData = {
+    nombrePaciente: docPatientNombre || 'N/E',
+    fecha: recetaFecha.trim() || hoy,
+    contenido: recetaContenido.trim(),
+  };
+
+  const ordenLabData: OrdenLabData = {
+    nombrePaciente: docPatientNombre || 'N/E',
+    fecha: labFecha.trim() || hoy,
+    seleccionados: labSeleccionados,
+    otrosRadiografias: labOtrosRadiografias.trim(),
+    otrosEstudios: labOtrosEstudios.trim(),
+    otros: labOtros.trim(),
+  };
   const [buscaPaciente, setBuscaPaciente] = useState('');
   const [showDocPatientPicker, setShowDocPatientPicker] = useState(false);
 
@@ -250,6 +314,36 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     </>
   );
 
+  /**
+   * Mejora la receta con IA: reescribe el mismo texto del doctor (ortografia,
+   * formato de lista) sin agregar ni completar nada.
+   */
+  const mejorarRecetaConIA = async () => {
+    if (!recetaContenido.trim()) {
+      alert('Escribe primero el contenido de la receta.');
+      return;
+    }
+    setMejorandoReceta(true);
+    try {
+      const contexto = [
+        docPatientNombre ? `Paciente seleccionado: ${docPatientNombre}` : '',
+        `Fecha de hoy: ${hoy}`,
+        `Médico: ${profile?.displayName || ''} (${profile?.specialty || 'Especialidad no indicada'})`,
+      ].filter(Boolean).join('\n');
+
+      const result = await generateStructuredCertification(recetaContenido, contexto, 'receta');
+      const data = result?.data as RecetaRxData | undefined;
+      if (!data?.contenido?.trim()) throw new Error('La IA no devolvió datos utilizables.');
+      if (data.fecha) setRecetaFecha(data.fecha);
+      setRecetaContenido(data.contenido);
+    } catch (error: any) {
+      console.error('Error mejorando la receta con IA:', error);
+      alert(error?.message || 'No se pudo mejorar la receta. Puedes escribirla a mano.');
+    } finally {
+      setMejorandoReceta(false);
+    }
+  };
+
   /** Nombre de paciente y contenido con los que se guarda cada plantilla. */
   const resumenPlantilla = () => {
     if (plantilla === 'certificado') {
@@ -257,6 +351,12 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     }
     if (plantilla === 'nacimiento') {
       return { paciente: nacData.nombreMadre, contenido: JSON.stringify(nacData, null, 2), data: nacData };
+    }
+    if (plantilla === 'receta') {
+      return { paciente: recetaData.nombrePaciente, contenido: recetaData.contenido, data: recetaData };
+    }
+    if (plantilla === 'orden_lab') {
+      return { paciente: ordenLabData.nombrePaciente, contenido: JSON.stringify(ordenLabData, null, 2), data: ordenLabData };
     }
     return { paciente: presPaciente, contenido: JSON.stringify(presData, null, 2), data: presData };
   };
@@ -270,7 +370,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
   const [generatedDocContent, setGeneratedDocContent] = useState('');
   const [certificationType, setCertificationType] = useState<'narrative' | 'birth'>('narrative');
   /** Plantilla que la IA debe rellenar. */
-  const [aiPlantilla, setAiPlantilla] = useState<PlantillaId>('certificado');
+  const [aiPlantilla, setAiPlantilla] = useState<PlantillaIA>('certificado');
   const [structuredData, setStructuredData] = useState<any | null>(null);
 
 
@@ -365,6 +465,18 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     
     try {
       if (view === 'template') {
+        if (plantilla === 'receta' && !recetaContenido.trim()) {
+          alert('Escribe el contenido de la receta antes de generarla.');
+          setIsGenerating(false);
+          return;
+        }
+        if (plantilla === 'orden_lab'
+            && labSeleccionados.length === 0
+            && !labOtros.trim() && !labOtrosRadiografias.trim() && !labOtrosEstudios.trim()) {
+          alert('Marca al menos un estudio antes de generar la orden.');
+          setIsGenerating(false);
+          return;
+        }
         // ... (resto del código de plantilla idéntico)
         if (user) {
           const etiqueta = PLANTILLAS.find(p => p.id === plantilla)?.label || 'Documento';
@@ -373,8 +485,9 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
             title: `${etiqueta} - ${resumen.paciente || 'Paciente'}`,
             subtitle: `Generado hoy • Plantilla: ${etiqueta}`,
             type: 'template',
+            certificationType: PLANTILLA_TIPO[plantilla],
             doctorUid: user.uid,
-            patientId: docPatient?.id || '',
+            patientId: docPatient?.id ?? null,
             patientName: resumen.paciente,
             createdAt: serverTimestamp(),
             content: resumen.contenido,
@@ -386,6 +499,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
         await new Promise(resolve => setTimeout(resolve, 800));
         alert("¡Documento generado y guardado con éxito!");
         setIsGenerating(false);
+        if (onVolver) onVolver();
         return;
       }
 
@@ -464,7 +578,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
             certificationType: tipoIA,
             structuredData: d,
             doctorUid: user.uid,
-            patientId: docPatient?.id || '',
+            patientId: docPatient?.id ?? null,
             patientName: pacienteIA,
             createdAt: serverTimestamp(),
             content: JSON.stringify(d, null, 2)
@@ -625,15 +739,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     historyPageSafe * HISTORY_PAGE_SIZE
   );
 
-  const tipoLegible = (doc: ClinicalDocument) => {
-    if (doc.type === 'template') return doc.templateType || 'Plantilla';
-    if (doc.type === 'structured_certification') {
-      if (doc.certificationType === 'birth') return 'Constancia de Nacimiento';
-      if (doc.certificationType === 'presupuesto') return 'Presupuesto Médico';
-      return 'Certificado Médico';
-    }
-    return 'Asistente IA';
-  };
+  const tipoLegible = (doc: ClinicalDocument) => etiquetaDocumento(doc);
 
   const renderHistory = () => (
     <div className="p-8 md:p-16 max-w-6xl mx-auto w-full space-y-10">
@@ -787,7 +893,10 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
         <div className="flex items-center justify-between">
           <h3 className="text-3xl font-black text-high-contrast tracking-tight">Recientes</h3>
           <button
-            onClick={() => { setHistorySearch(''); setHistoryPage(1); setView('history'); }}
+            onClick={() => {
+              if (onVerDocumentos) return onVerDocumentos();
+              setHistorySearch(''); setHistoryPage(1); setView('history');
+            }}
             className="text-sm font-black text-primary flex items-center gap-2 hover:underline underline-offset-4"
           >
             Ver todo el historial <Download className="w-4 h-4 rotate-[-90deg]" />
@@ -879,6 +988,73 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
                         <ChevronDown className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-high-contrast/20 pointer-events-none" />
                       </div>
                     </div>
+
+                    {/* --- Receta Rx: texto libre, con mejora opcional por IA --- */}
+                    {plantilla === 'receta' && (
+                      <div className="space-y-8">
+                        <div className="space-y-3">
+                          <label className={LBL}>Contenido de la receta</label>
+                          <textarea
+                            className={INPUT + ' !h-auto py-4 resize-none leading-relaxed'}
+                            rows={8}
+                            placeholder={'Ej:\nAmoxicilina 500mg cada 8 horas por 7 dias\nTomar con alimentos'}
+                            value={recetaContenido}
+                            onChange={(e) => setRecetaContenido(e.target.value)}
+                          />
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <p className="text-[11px] text-high-contrast/40">
+                              Se imprime tal cual lo escribas, con los saltos de linea incluidos.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={mejorarRecetaConIA}
+                              disabled={mejorandoReceta}
+                              className="btn-primary flex items-center gap-2 py-2.5 px-5 text-sm disabled:opacity-60"
+                            >
+                              {mejorandoReceta
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Sparkles className="w-4 h-4" />}
+                              {mejorandoReceta ? 'Mejorando...' : 'Mejorar con IA'}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className={LBL}>Fecha</label>
+                          <input
+                            type="text"
+                            className={INPUT}
+                            value={recetaFecha}
+                            onChange={(e) => setRecetaFecha(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* --- Orden de Laboratorio: catalogo de estudios marcables --- */}
+                    {plantilla === 'orden_lab' && (
+                      <div className="space-y-8">
+                        <OrdenLabCampos
+                          seleccionados={labSeleccionados}
+                          onToggle={toggleEstudio}
+                          onLimpiar={() => setLabSeleccionados([])}
+                          otrosRadiografias={labOtrosRadiografias}
+                          onOtrosRadiografias={setLabOtrosRadiografias}
+                          otrosEstudios={labOtrosEstudios}
+                          onOtrosEstudios={setLabOtrosEstudios}
+                          otros={labOtros}
+                          onOtros={setLabOtros}
+                        />
+                        <div className="space-y-3">
+                          <label className={LBL}>Fecha</label>
+                          <input
+                            type="text"
+                            className={INPUT}
+                            value={labFecha}
+                            onChange={(e) => setLabFecha(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* --- Certificado Medico: paciente, fecha y cuerpo narrativo --- */}
                     {plantilla === 'certificado' && (
@@ -1083,6 +1259,42 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
                     </div>
 
                     <div id="printable-document">
+                      {plantilla === 'receta' && (
+                        <RecetaRxTemplate
+                          data={recetaData}
+                          documentRef={documentRef}
+                          doctorName={profile?.displayName || 'Médico'}
+                          specialty={profile?.specialty || ''}
+                          exequatur={profile?.exequatur}
+                          doctorLogoUrl={profile?.doctorLogoUrl}
+                          clinicLogoUrl={profile?.clinicLogoUrl}
+                          clinicName={profile?.clinicName}
+                          clinicTagline={profile?.clinicTagline}
+                          clinicAddress={profile?.clinicAddress}
+                          clinicSuite={profile?.clinicSuite}
+                          phoneOffice={profile?.phoneOffice}
+                          phoneExt={profile?.phoneExt}
+                          phoneCell={profile?.phoneCell}
+                        />
+                      )}
+                      {plantilla === 'orden_lab' && (
+                        <OrdenLabTemplate
+                          data={ordenLabData}
+                          documentRef={documentRef}
+                          doctorName={profile?.displayName || 'Médico'}
+                          specialty={profile?.specialty || ''}
+                          exequatur={profile?.exequatur}
+                          doctorLogoUrl={profile?.doctorLogoUrl}
+                          clinicLogoUrl={profile?.clinicLogoUrl}
+                          clinicName={profile?.clinicName}
+                          clinicTagline={profile?.clinicTagline}
+                          clinicAddress={profile?.clinicAddress}
+                          clinicSuite={profile?.clinicSuite}
+                          phoneOffice={profile?.phoneOffice}
+                          phoneExt={profile?.phoneExt}
+                          phoneCell={profile?.phoneCell}
+                        />
+                      )}
                       {plantilla === 'certificado' && (
                         <CertificadoMedicoTemplate data={certData} profile={profile} documentRef={documentRef} />
                       )}
@@ -1123,11 +1335,11 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
                           </div>
                           <label className="text-[10px] font-black text-high-contrast/40 uppercase tracking-widest px-1">Plantilla a rellenar</label>
                           <div className="flex flex-col gap-2">
-                            {PLANTILLAS.map(pl => (
+                            {PLANTILLAS.filter(pl => PLANTILLAS_IA.includes(pl.id as PlantillaIA)).map(pl => (
                               <button
                                 key={pl.id}
                                 type="button"
-                                onClick={() => setAiPlantilla(pl.id)}
+                                onClick={() => setAiPlantilla(pl.id as PlantillaIA)}
                                 className={cn(
                                   "w-full py-3 px-4 rounded-xl text-xs font-bold transition-all border text-left",
                                   aiPlantilla === pl.id
