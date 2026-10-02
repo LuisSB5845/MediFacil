@@ -3,7 +3,7 @@ import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'f
 import { motion } from 'motion/react';
 import {
   Pill, Search, ArrowLeft, FileDown, Printer, Loader2, FileText, Calendar,
-  Eye, Edit3, Trash2, Check, FlaskConical, Baby, Receipt, Stethoscope, X,
+  Eye, Edit3, Trash2, Check, FlaskConical, Baby, Receipt, Stethoscope, X, Plus,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -100,11 +100,15 @@ export const RecetasScreen = ({
   doctorUid,
   profile,
   onDeleteReceta,
+  onGenerar,
 }: {
   doctorUid: string;
   profile: UserProfile | null;
   /** Usa el mismo modal de confirmación que el historial médico. */
   onDeleteReceta: (recetaId: string) => void;
+  /** Lleva al generador. Esta pantalla es la unica puerta a los documentos:
+   *  se consultan aqui y se crean desde aqui. */
+  onGenerar: () => void;
 }) => {
   const [recetas, setRecetas] = useState<ClinicalDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -419,15 +423,24 @@ export const RecetasScreen = ({
   return (
     <div className="p-4 md:p-10 space-y-8">
       <div className="space-y-5">
-        <div className="relative max-w-md">
-          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
-          <input
-            type="text"
-            placeholder="Buscar por paciente o contenido..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input-field w-full pl-11"
-          />
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[16rem] max-w-md">
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+            <input
+              type="text"
+              placeholder="Buscar por paciente o contenido..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input-field w-full pl-11"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onGenerar}
+            className="h-12 px-6 bg-primary text-white rounded-2xl text-sm font-black flex items-center gap-2.5 hover:bg-primary-container transition-all shadow-lg shadow-primary/30 shrink-0"
+          >
+            <Plus className="w-4 h-4" /> Generar documento
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -524,9 +537,13 @@ export const RecetasScreen = ({
               : 'Nada coincide con esos filtros.'}
           </p>
           {recetas.length === 0 ? (
-            <p className="text-xs text-high-contrast/40">
-              Usa "Generar Documento" o la Receta Rápida del Dashboard para crear el primero.
-            </p>
+            <button
+              type="button"
+              onClick={onGenerar}
+              className="text-xs font-bold text-primary hover:underline"
+            >
+              Generar el primero
+            </button>
           ) : (
             <button
               type="button"

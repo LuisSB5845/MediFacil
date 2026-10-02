@@ -838,6 +838,16 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
 
   const renderSelection = () => (
     <div className="max-w-7xl mx-auto py-16 space-y-24 px-8">
+      {onVerDocumentos && (
+        <button
+          type="button"
+          onClick={onVerDocumentos}
+          className="flex items-center gap-3 bg-white border border-surface-container-high px-6 py-3 rounded-2xl hover:border-primary/30 transition-all group w-fit"
+        >
+          <ArrowLeft className="w-4 h-4 text-primary group-hover:-translate-x-1 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-widest">Volver a Documentos</span>
+        </button>
+      )}
       <div className="text-center space-y-4">
         <h1 className="text-5xl font-black text-primary tracking-tight">Generar Documento</h1>
         <p className="text-high-contrast/40 font-medium text-xl">Crea certificados, cartas y documentos médicos con IA.</p>

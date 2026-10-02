@@ -787,7 +787,6 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Pacientes', icon: Users },
-    { id: 'generate', label: 'Generar Documento', icon: FileText },
     { id: 'recetas', label: 'Documentos', icon: FileText },
     { id: 'finanzas', label: 'Finanzas', icon: DollarSign },
     { id: 'assistant', label: 'Asistente de IA', icon: Bot },
@@ -971,6 +970,8 @@ export default function App() {
   const [showConsultationSearchModal, setShowConsultationSearchModal] = useState(false);
   /** Atajo del Dashboard: abre el generador directamente en la receta. */
   const [recetaDirecta, setRecetaDirecta] = useState(false);
+  /** Se entro al generador desde Documentos: al guardar se vuelve ahi. */
+  const [desdeDocumentos, setDesdeDocumentos] = useState(false);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   // Cobro opcional asociado a la consulta que se esta registrando.
   const [cobroActivo, setCobroActivo] = useState(false);
@@ -1492,7 +1493,7 @@ export default function App() {
                           });
                           setShowAddConsultation(true);
                         }}
-                        onQuickRx={() => { setRecetaDirecta(true); setActiveTab('generate'); }}
+                        onQuickRx={() => { setDesdeDocumentos(false); setRecetaDirecta(true); setActiveTab('generate'); }}
                         search={search}
                         onSearchChange={setSearch}
                         user={profile}
@@ -1552,10 +1553,23 @@ export default function App() {
                         patients={patients}
                         onVerDocumentos={() => setActiveTab('recetas')}
                         plantillaInicial={recetaDirecta ? 'receta' : undefined}
-                        onVolver={recetaDirecta ? () => { setRecetaDirecta(false); setActiveTab('dashboard'); } : undefined}
+                        onVolver={
+                          recetaDirecta
+                            ? () => { setRecetaDirecta(false); setActiveTab('dashboard'); }
+                            : desdeDocumentos
+                              ? () => { setDesdeDocumentos(false); setActiveTab('recetas'); }
+                              : undefined
+                        }
                       />
                     } />
-                    <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} onDeleteReceta={handleDeleteReceta} />} />
+                    <Route path="/recetas" element={
+                      <RecetasScreen
+                        doctorUid={user?.uid || ''}
+                        profile={profile}
+                        onDeleteReceta={handleDeleteReceta}
+                        onGenerar={() => { setDesdeDocumentos(true); setActiveTab('generate'); }}
+                      />
+                    } />
                     <Route path="/finanzas" element={<FinancesScreen doctorUid={user?.uid || ''} profile={profile} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />
                     <Route path="/plans" element={<PaymentPlans user={profile} />} />
