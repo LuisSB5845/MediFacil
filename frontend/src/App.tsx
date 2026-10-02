@@ -91,7 +91,6 @@ import {
   PenTool,
   CreditCard,
   FolderOpen,
-  Pill,
   DollarSign,
   Menu
 } from 'lucide-react';
@@ -789,7 +788,7 @@ const Sidebar = ({ activeTab, setActiveTab, user, onLogout, isAdmin, onClearPati
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Pacientes', icon: Users },
     { id: 'generate', label: 'Generar Documento', icon: FileText },
-    { id: 'recetas', label: 'Recetas', icon: Pill },
+    { id: 'recetas', label: 'Documentos', icon: FileText },
     { id: 'finanzas', label: 'Finanzas', icon: DollarSign },
     { id: 'assistant', label: 'Asistente de IA', icon: Bot },
     { id: 'plans', label: 'Planes de Pago', icon: CreditCard },
@@ -1378,7 +1377,7 @@ export default function App() {
                 : activeTab === 'generate'
                   ? "Generar Documento"
                   : activeTab === 'recetas'
-                  ? "Recetas"
+                  ? "Documentos"
                   : activeTab === 'finanzas'
                   ? "Finanzas & Reportes"
                   : activeTab === 'assistant'
@@ -1391,7 +1390,7 @@ export default function App() {
             selectedPatient
               ? selectedPatient.name
               : activeTab === 'recetas'
-                ? "Historial de recetas emitidas"
+                ? "Todos los documentos emitidos"
                 : activeTab === 'finanzas'
                   ? "Cobros e ingresos del consultorio"
                 : undefined
@@ -1546,7 +1545,7 @@ export default function App() {
                         onDateFilterChange={setPatientDateFilter}
                       />
                     } />
-                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} patients={patients} />} />
+                    <Route path="/generate" element={<DocumentGenerator user={user} profile={profile} patients={patients} onVerDocumentos={() => setActiveTab('recetas')} />} />
                     <Route path="/recetas" element={<RecetasScreen doctorUid={user?.uid || ''} profile={profile} onDeleteReceta={handleDeleteReceta} />} />
                     <Route path="/finanzas" element={<FinancesScreen doctorUid={user?.uid || ''} profile={profile} />} />
                     <Route path="/assistant" element={<AIAssistant user={user} profile={profile} />} />

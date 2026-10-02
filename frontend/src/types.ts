@@ -148,8 +148,11 @@ export interface ClinicalDocument {
   type: 'ai' | 'template' | 'structured_certification';
   doctorUid: string;
   patientName?: string;
-  /** Id del paciente. Los documentos viejos solo tienen el nombre. */
-  patientId?: string;
+  /**
+   * Id del paciente. null cuando el doctor escribio el nombre a mano, y ausente
+   * en los documentos anteriores a que se guardara.
+   */
+  patientId?: string | null;
   createdAt: any;
   content: string;
   structuredData?: NarrativeCertificationData | BirthCertificationData | RecetaRxData | OrdenLabData;

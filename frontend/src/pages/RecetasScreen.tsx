@@ -3,14 +3,16 @@ import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'f
 import { motion } from 'motion/react';
 import {
   Pill, Search, ArrowLeft, FileDown, Printer, Loader2, FileText, Calendar,
-  Eye, Edit3, Trash2, Check, FlaskConical,
+  Eye, Edit3, Trash2, Check, FlaskConical, Baby, Receipt, Stethoscope, X,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { db } from '../lib/firebase';
-import { ClinicalDocument, OrdenLabData, RecetaRxData, UserProfile } from '../types';
+import { CertificationType, ClinicalDocument, OrdenLabData, RecetaRxData, UserProfile } from '../types';
 import { RecetaRxTemplate } from '../components/templates/RecetaRxTemplate';
 import { OrdenLabTemplate } from '../components/templates/OrdenLabTemplate';
+import { DocumentViewerModal } from '../components/DocumentViewerModal';
+import { ETIQUETA_TIPO, TIPOS_FILTRABLES, etiquetaDocumento, tipoDocumento } from '../lib/documentTypes';
 
 /** Iniciales del doctor a partir del nombre: "Dra. Isabel Beato" -> "I.B." */
 const buildInitials = (displayName?: string): string | undefined => {
@@ -38,6 +40,33 @@ const formatDate = (createdAt: any): string => {
 
 const esLab = (doc: ClinicalDocument) => doc.certificationType === 'orden_lab';
 
+/** Icono de cada tipo en las tarjetas del listado. */
+const ICONO_TIPO: Record<CertificationType, typeof Pill> = {
+  receta: Pill,
+  orden_lab: FlaskConical,
+  certificado: Stethoscope,
+  narrative: Stethoscope,
+  birth: Baby,
+  presupuesto: Receipt,
+};
+
+/** Rangos del filtro de fecha. El rango con dos calendarios se dejo fuera a
+ *  proposito: con el volumen de hoy no se usa y cuesta bastante mas. */
+type RangoFecha = 'todo' | '30d' | 'anio';
+
+const dentroDelRango = (createdAt: any, rango: RangoFecha): boolean => {
+  if (rango === 'todo') return true;
+  const d = toDate(createdAt);
+  if (!d) return false;
+  const ahora = new Date();
+  if (rango === '30d') {
+    const limite = new Date(ahora);
+    limite.setDate(limite.getDate() - 30);
+    return d >= limite;
+  }
+  return d.getFullYear() === ahora.getFullYear();
+};
+
 /** Resumen corto para la tarjeta: primeras líneas de la receta o estudios pedidos. */
 const buildPreview = (doc: ClinicalDocument): string => {
   if (esLab(doc)) {
@@ -47,11 +76,25 @@ const buildPreview = (doc: ClinicalDocument): string => {
     const visibles = items.slice(0, 4).join(' · ');
     return items.length > 4 ? `${visibles} · +${items.length - 4} más` : visibles;
   }
+  const tipo = tipoDocumento(doc);
+  if (tipo && tipo !== 'receta') {
+    // Certificados, constancias y presupuestos guardan su propio esquema.
+    const d = doc.structuredData as any;
+    const texto = d?.cuerpo || d?.diagnostico || d?.recommendations || d?.nombreMadre || '';
+    if (texto) return extracto(String(texto));
+  }
   const data = doc.structuredData as RecetaRxData | undefined;
   const raw = (data?.contenido || doc.content || '').trim();
   if (!raw) return 'Sin contenido';
+  if (raw.startsWith('{')) return 'Documento archivado';
   return raw.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 3).join(' · ');
 };
+
+/** Corta un texto largo para la tarjeta del listado. */
+function extracto(texto: string, max = 120): string {
+  const limpio = texto.replace(/\s+/g, ' ').trim();
+  return limpio.length > max ? `${limpio.slice(0, max)}…` : limpio;
+}
 
 export const RecetasScreen = ({
   doctorUid,
@@ -67,7 +110,12 @@ export const RecetasScreen = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  // Filtros: null = todos los tipos.
+  const [tipoFiltro, setTipoFiltro] = useState<CertificationType | null>(null);
+  const [rangoFecha, setRangoFecha] = useState<RangoFecha>('todo');
   const [selected, setSelected] = useState<ClinicalDocument | null>(null);
+  /** Documentos que esta pantalla no sabe renderizar: se abren en el visor. */
+  const [enVisor, setEnVisor] = useState<ClinicalDocument | null>(null);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -81,9 +129,10 @@ export const RecetasScreen = ({
 
   useEffect(() => {
     if (!doctorUid) return;
-    // Mismo patrón de query que el resto del proyecto. El filtro por
-    // certificationType va en cliente a propósito: un `where` extra exigiría
-    // un índice compuesto nuevo en Firestore.
+    // Esta pantalla es el historial completo: trae todos los documentos del
+    // doctor y los filtros se aplican en cliente. Un `where` por tipo o por
+    // fecha exigiria un indice compuesto por cada combinacion; con el volumen
+    // de hoy no compensa, y al migrar a Postgres seria un WHERE y ya.
     const q = query(
       collection(db, 'clinical_documents'),
       where('doctorUid', '==', doctorUid),
@@ -93,16 +142,15 @@ export const RecetasScreen = ({
       q,
       snapshot => {
         const docs = snapshot.docs
-          .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument))
-          .filter(d => d.certificationType === 'receta' || d.certificationType === 'orden_lab');
+          .map(d => ({ id: d.id, ...d.data() } as ClinicalDocument));
         setRecetas(docs);
         // Si la receta abierta se borró o cambió en otra pestaña, se refleja aquí.
         setSelected(prev => (prev ? docs.find(d => d.id === prev.id) || null : null));
         setIsLoading(false);
       },
       err => {
-        console.error('Error cargando las recetas:', err);
-        setError(err?.message || 'No se pudieron cargar las recetas.');
+        console.error('Error cargando los documentos:', err);
+        setError(err?.message || 'No se pudieron cargar los documentos.');
         setIsLoading(false);
       }
     );
@@ -110,23 +158,41 @@ export const RecetasScreen = ({
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return recetas;
     return recetas.filter(r => {
+      if (tipoFiltro && tipoDocumento(r) !== tipoFiltro) return false;
+      if (!dentroDelRango(r.createdAt, rangoFecha)) return false;
+      if (!term) return true;
       return (
         (r.patientName || '').toLowerCase().includes(term) ||
+        etiquetaDocumento(r).toLowerCase().includes(term) ||
         buildPreview(r).toLowerCase().includes(term)
       );
     });
-  }, [recetas, search]);
+  }, [recetas, search, tipoFiltro, rangoFecha]);
+
+  /** Tipos presentes en los documentos del doctor, para no ofrecer filtros vacios. */
+  const tiposDisponibles = useMemo(() => {
+    const presentes = new Set(recetas.map(tipoDocumento).filter(Boolean));
+    return TIPOS_FILTRABLES.filter(t => presentes.has(t));
+  }, [recetas]);
+
+  const hayFiltros = tipoFiltro !== null || rangoFecha !== 'todo' || search.trim() !== '';
 
   const selectedEsLab = selected ? esLab(selected) : false;
   const selectedData = selected?.structuredData as RecetaRxData | undefined;
   const selectedLabData = selected?.structuredData as OrdenLabData | undefined;
 
   const openReceta = (receta: ClinicalDocument, nextMode: 'view' | 'edit') => {
+    const tipo = tipoDocumento(receta);
+    if (tipo !== 'receta' && tipo !== 'orden_lab') {
+      // Esta pantalla solo sabe renderizar receta y orden de laboratorio; el
+      // resto ya lo maneja el visor del historial.
+      setEnVisor(receta);
+      return;
+    }
     const data = receta.structuredData as RecetaRxData | undefined;
     setSelected(receta);
-    setMode(nextMode);
+    setMode(esLab(receta) ? 'view' : nextMode);
     setError(null);
     setEditPaciente(data?.nombrePaciente || receta.patientName || '');
     setEditFecha(data?.fecha || '');
@@ -135,6 +201,12 @@ export const RecetasScreen = ({
 
   const handleSaveEdit = async () => {
     if (!selected) return;
+    if (esLab(selected)) {
+      // Defensa de fondo: este editor no sabe editar ordenes de laboratorio.
+      setError('Las ordenes de laboratorio no se editan desde aqui.');
+      setMode('view');
+      return;
+    }
     if (!editPaciente.trim()) {
       setError('Indica el nombre del paciente.');
       return;
@@ -346,15 +418,88 @@ export const RecetasScreen = ({
   // --- Listado ---
   return (
     <div className="p-4 md:p-10 space-y-8">
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
-        <input
-          type="text"
-          placeholder="Buscar por paciente o contenido..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="input-field w-full pl-11"
-        />
+      <div className="space-y-5">
+        <div className="relative max-w-md">
+          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+          <input
+            type="text"
+            placeholder="Buscar por paciente o contenido..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="input-field w-full pl-11"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Tipo de documento. Solo se ofrecen los tipos que el doctor tiene. */}
+          <div className="inline-flex flex-wrap gap-1 p-1 bg-surface-container-high rounded-xl">
+            <button
+              type="button"
+              onClick={() => setTipoFiltro(null)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                tipoFiltro === null
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-high-contrast/50 hover:text-high-contrast'
+              }`}
+            >
+              Todos
+            </button>
+            {tiposDisponibles.map(t => {
+              const Icono = ICONO_TIPO[t];
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTipoFiltro(t)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                    tipoFiltro === t
+                      ? 'bg-white text-primary shadow-sm'
+                      : 'text-high-contrast/50 hover:text-high-contrast'
+                  }`}
+                >
+                  <Icono className="w-4 h-4" />
+                  {ETIQUETA_TIPO[t]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Fecha */}
+          <div className="inline-flex gap-1 p-1 bg-surface-container-high rounded-xl">
+            {([
+              { id: 'todo' as RangoFecha, label: 'Siempre' },
+              { id: '30d' as RangoFecha, label: 'Últimos 30 días' },
+              { id: 'anio' as RangoFecha, label: 'Este año' },
+            ]).map(opt => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setRangoFecha(opt.id)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                  rangoFecha === opt.id
+                    ? 'bg-white text-primary shadow-sm'
+                    : 'text-high-contrast/50 hover:text-high-contrast'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {hayFiltros && (
+            <button
+              type="button"
+              onClick={() => { setTipoFiltro(null); setRangoFecha('todo'); setSearch(''); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-high-contrast/40 hover:text-red-600 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" /> Limpiar filtros
+            </button>
+          )}
+
+          <span className="text-xs font-bold text-high-contrast/30 ml-auto">
+            {filtered.length} de {recetas.length}
+          </span>
+        </div>
       </div>
 
       {error && (
@@ -366,7 +511,7 @@ export const RecetasScreen = ({
       {isLoading ? (
         <div className="py-24 flex flex-col items-center gap-3 text-high-contrast/40">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <p className="text-sm font-medium">Cargando recetas...</p>
+          <p className="text-sm font-medium">Cargando documentos...</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-24 text-center space-y-3">
@@ -375,23 +520,36 @@ export const RecetasScreen = ({
           </div>
           <p className="text-on-surface-variant text-sm font-medium">
             {recetas.length === 0
-              ? 'Todavía no has emitido ninguna receta ni orden de laboratorio.'
-              : 'Nada coincide con esa búsqueda.'}
+              ? 'Todavía no has emitido ningún documento.'
+              : 'Nada coincide con esos filtros.'}
           </p>
-          {recetas.length === 0 && (
+          {recetas.length === 0 ? (
             <p className="text-xs text-high-contrast/40">
-              Usa la acción rápida "Receta Rápida" del Dashboard para crear la primera.
+              Usa "Generar Documento" o la Receta Rápida del Dashboard para crear el primero.
             </p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setTipoFiltro(null); setRangoFecha('todo'); setSearch(''); }}
+              className="text-xs font-bold text-primary hover:underline"
+            >
+              Limpiar filtros
+            </button>
           )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filtered.map((receta, i) => {
             const lab = esLab(receta);
+            const tipo = tipoDocumento(receta);
+            const esReceta = tipo === 'receta';
+            const Icono = tipo ? ICONO_TIPO[tipo] : FileText;
             const data = receta.structuredData as RecetaRxData | undefined;
             // Las recetas del modelo estructurado viejo no tienen `contenido`:
             // se listan, pero no se abren ni se editan (solo se pueden borrar).
-            const abrible = lab ? Boolean(receta.structuredData) : Boolean(data?.contenido);
+            const abrible = esReceta
+              ? Boolean(data?.contenido)
+              : Boolean(receta.structuredData || receta.content);
             return (
               <motion.div
                 key={receta.id}
@@ -403,7 +561,7 @@ export const RecetasScreen = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                      {lab ? <FlaskConical className="w-5 h-5" /> : <Pill className="w-5 h-5" />}
+                      <Icono className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-bold text-on-surface text-sm truncate">
@@ -421,7 +579,7 @@ export const RecetasScreen = ({
                   {buildPreview(receta)}
                 </p>
                 <p className="text-[10px] font-bold text-high-contrast/30 uppercase tracking-widest">
-                  {lab ? 'Orden de laboratorio' : 'Receta Rx'} · {formatDate(receta.createdAt)}
+                  {etiquetaDocumento(receta)} · {formatDate(receta.createdAt)}
                 </p>
 
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-surface-container-low">
@@ -429,12 +587,12 @@ export const RecetasScreen = ({
                     type="button"
                     onClick={() => openReceta(receta, 'view')}
                     disabled={!abrible}
-                    title={abrible ? 'Ver receta' : 'Receta de un formato anterior: no se puede abrir'}
+                    title={abrible ? 'Ver documento' : 'Documento de un formato anterior: no se puede abrir'}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-[10px] shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest border-2 border-blue-500/20 disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Eye className="w-4 h-4" /> Ver
                   </button>
-                  {!lab && (
+                  {esReceta && (
                   <button
                     type="button"
                     onClick={() => openReceta(receta, 'edit')}
@@ -458,6 +616,14 @@ export const RecetasScreen = ({
             );
           })}
         </div>
+      )}
+
+      {enVisor && (
+        <DocumentViewerModal
+          doc={enVisor}
+          profile={profile}
+          onClose={() => setEnVisor(null)}
+        />
       )}
     </div>
   );

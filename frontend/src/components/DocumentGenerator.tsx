@@ -33,7 +33,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, ClinicalDocument, Patient } from '../types';
+import { UserProfile, ClinicalDocument, Patient, CertificationType } from '../types';
+import { etiquetaDocumento } from '../lib/documentTypes';
 import { cn } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -70,16 +71,25 @@ const AI_TARGET: Record<PlantillaId, 'certificado' | 'birth' | 'presupuesto'> = 
   presupuesto: 'presupuesto',
 };
 
+/** Tipo con el que se archiva cada plantilla. La etiqueta visible es aparte. */
+const PLANTILLA_TIPO: Record<PlantillaId, CertificationType> = {
+  certificado: 'certificado',
+  nacimiento: 'birth',
+  presupuesto: 'presupuesto',
+};
+
 const PLANTILLAS: { id: PlantillaId; label: string }[] = [
   { id: 'certificado', label: 'Certificado Médico' },
   { id: 'nacimiento', label: 'Constancia de Nacimiento' },
   { id: 'presupuesto', label: 'Presupuesto Médico' },
 ];
 
-export const DocumentGenerator = ({ user, profile, patients = [] }: {
+export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumentos }: {
   user: FirebaseUser | null;
   profile: UserProfile | null;
   patients?: Patient[];
+  /** Lleva a la pestana Documentos, el historial unico con filtros. */
+  onVerDocumentos?: () => void;
 }) => {
   const [view, setView] = useState<DocView>('selection');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -107,8 +117,9 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     return onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as ClinicalDocument))
-        // Las recetas Rx tienen su propio flujo (Receta Rápida) y no se abren aquí.
-        .filter(doc => doc.certificationType !== 'receta' && doc.certificationType !== 'orden_lab');
+        // Recetas y ordenes se listan tambien: son documentos como los demas y
+        // el doctor espera ver aqui lo ultimo que emitio, sea del tipo que sea.
+        ;
       setAllDocuments(docs);
       setRecentDocuments(docs.slice(0, 5));
     }, (error) => {
@@ -373,8 +384,9 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
             title: `${etiqueta} - ${resumen.paciente || 'Paciente'}`,
             subtitle: `Generado hoy • Plantilla: ${etiqueta}`,
             type: 'template',
+            certificationType: PLANTILLA_TIPO[plantilla],
             doctorUid: user.uid,
-            patientId: docPatient?.id || '',
+            patientId: docPatient?.id ?? null,
             patientName: resumen.paciente,
             createdAt: serverTimestamp(),
             content: resumen.contenido,
@@ -464,7 +476,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
             certificationType: tipoIA,
             structuredData: d,
             doctorUid: user.uid,
-            patientId: docPatient?.id || '',
+            patientId: docPatient?.id ?? null,
             patientName: pacienteIA,
             createdAt: serverTimestamp(),
             content: JSON.stringify(d, null, 2)
@@ -625,15 +637,7 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
     historyPageSafe * HISTORY_PAGE_SIZE
   );
 
-  const tipoLegible = (doc: ClinicalDocument) => {
-    if (doc.type === 'template') return doc.templateType || 'Plantilla';
-    if (doc.type === 'structured_certification') {
-      if (doc.certificationType === 'birth') return 'Constancia de Nacimiento';
-      if (doc.certificationType === 'presupuesto') return 'Presupuesto Médico';
-      return 'Certificado Médico';
-    }
-    return 'Asistente IA';
-  };
+  const tipoLegible = (doc: ClinicalDocument) => etiquetaDocumento(doc);
 
   const renderHistory = () => (
     <div className="p-8 md:p-16 max-w-6xl mx-auto w-full space-y-10">
@@ -787,7 +791,10 @@ export const DocumentGenerator = ({ user, profile, patients = [] }: {
         <div className="flex items-center justify-between">
           <h3 className="text-3xl font-black text-high-contrast tracking-tight">Recientes</h3>
           <button
-            onClick={() => { setHistorySearch(''); setHistoryPage(1); setView('history'); }}
+            onClick={() => {
+              if (onVerDocumentos) return onVerDocumentos();
+              setHistorySearch(''); setHistoryPage(1); setView('history');
+            }}
             className="text-sm font-black text-primary flex items-center gap-2 hover:underline underline-offset-4"
           >
             Ver todo el historial <Download className="w-4 h-4 rotate-[-90deg]" />

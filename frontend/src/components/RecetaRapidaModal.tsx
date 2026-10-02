@@ -47,6 +47,9 @@ export const RecetaRapidaModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // El paciente elegido de la lista, para guardar su id junto al documento.
+  // Queda en null si el doctor escribe el nombre a mano.
+  const [paciente, setPaciente] = useState<Patient | null>(null);
   const [nombrePaciente, setNombrePaciente] = useState('');
   const [fecha, setFecha] = useState(todayLabel());
   const [contenido, setContenido] = useState('');
@@ -112,7 +115,10 @@ export const RecetaRapidaModal = ({
       }
 
       // El doctor manda: si ya eligió paciente, no se pisa con lo que infiera la IA.
-      if (!nombrePaciente.trim() && data.nombrePaciente) setNombrePaciente(data.nombrePaciente);
+      if (!nombrePaciente.trim() && data.nombrePaciente) {
+        setNombrePaciente(data.nombrePaciente);
+        setPaciente(null);
+      }
       if (data.fecha) setFecha(data.fecha);
       setContenido(data.contenido);
     } catch (err: any) {
@@ -158,6 +164,7 @@ export const RecetaRapidaModal = ({
         certificationType: esRx ? 'receta' : 'orden_lab',
         structuredData: data,
         doctorUid,
+        patientId: paciente?.id ?? null,
         patientName: data.nombrePaciente,
         createdAt: serverTimestamp(),
         content: JSON.stringify(data, null, 2),
@@ -254,7 +261,7 @@ export const RecetaRapidaModal = ({
                     type="text"
                     placeholder="Nombre del paciente"
                     value={nombrePaciente}
-                    onChange={(e) => setNombrePaciente(e.target.value)}
+                    onChange={(e) => { setNombrePaciente(e.target.value); setPaciente(null); }}
                   />
                   <button
                     type="button"
@@ -286,6 +293,7 @@ export const RecetaRapidaModal = ({
                             key={patient.id}
                             type="button"
                             onClick={() => {
+                              setPaciente(patient);
                               setNombrePaciente(patient.name);
                               setShowPatientPicker(false);
                               setSearch('');
@@ -440,7 +448,7 @@ export const RecetaRapidaModal = ({
                       className="input-field w-full"
                       type="text"
                       value={nombrePaciente}
-                      onChange={(e) => setNombrePaciente(e.target.value)}
+                      onChange={(e) => { setNombrePaciente(e.target.value); setPaciente(null); }}
                     />
                   </div>
                   <div className="space-y-2">
