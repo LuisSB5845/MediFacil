@@ -65,17 +65,18 @@ export type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto' | 'receta
 
 /** Las que la IA sabe rellenar. Receta usa su propia mejora de texto, y la
  *  orden de laboratorio es seleccion manual de estudios. */
-type PlantillaIA = 'certificado' | 'nacimiento' | 'presupuesto';
+type PlantillaIA = 'certificado' | 'nacimiento' | 'presupuesto' | 'receta';
 
 /** Estilos compartidos por los campos de las plantillas. */
 const LBL = 'text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1';
 const INPUT = 'w-full h-14 px-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white';
 
 /** Tipo de documento estructurado que pide cada plantilla al backend. */
-const AI_TARGET: Record<PlantillaIA, 'certificado' | 'birth' | 'presupuesto'> = {
+const AI_TARGET: Record<PlantillaIA, 'certificado' | 'birth' | 'presupuesto' | 'receta'> = {
   certificado: 'certificado',
   nacimiento: 'birth',
   presupuesto: 'presupuesto',
+  receta: 'receta',
 };
 
 /** Tipo con el que se archiva cada plantilla. La etiqueta visible es aparte. */
@@ -88,7 +89,7 @@ const PLANTILLA_TIPO: Record<PlantillaId, CertificationType> = {
 };
 
 /** Plantillas que la IA puede rellenar desde una descripcion libre. */
-const PLANTILLAS_IA: PlantillaIA[] = ['certificado', 'nacimiento', 'presupuesto'];
+const PLANTILLAS_IA: PlantillaIA[] = ['receta', 'certificado', 'nacimiento', 'presupuesto'];
 
 const PLANTILLAS: { id: PlantillaId; label: string }[] = [
   { id: 'receta', label: 'Receta Rx' },
@@ -531,10 +532,15 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
         const pacienteIA: string = docPatient?.name || (
           aiPlantilla === 'nacimiento' ? d.nombreMadre
           : aiPlantilla === 'presupuesto' ? d.nombrePaciente
+          : aiPlantilla === 'receta' ? d.nombrePaciente
           : d.paciente
         ) || '';
 
-        if (aiPlantilla === 'nacimiento') {
+        if (aiPlantilla === 'receta') {
+          if (d.fecha) setRecetaFecha(d.fecha);
+          setRecetaContenido(d.contenido || '');
+          titleText = `Receta Rx - ${pacienteIA || 'Paciente'}`;
+        } else if (aiPlantilla === 'nacimiento') {
           setNac(prev => ({
             ...prev,
             nombreMadre: d.nombreMadre || '',
