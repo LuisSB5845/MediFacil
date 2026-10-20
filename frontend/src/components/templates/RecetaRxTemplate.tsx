@@ -100,19 +100,21 @@ export const RecetaRxTemplate = ({
               <ol className={denso ? 'space-y-3' : 'space-y-6'}>
                 {medicamentos.map((med, i) => (
                   <li key={i} className="break-words [overflow-wrap:anywhere]">
-                    {/* Numeral y cantidad arriba; el medicamento debajo, como
-                        en el recetario impreso. */}
-                    <div className="flex items-baseline justify-between gap-6">
-                      <span className={`font-black text-high-contrast ${denso ? 'text-sm' : 'text-base'}`}>
+                    {/* Numeral centrado con la cantidad al margen derecho, y el
+                        medicamento centrado debajo, como en el recetario impreso.
+                        La cantidad se posiciona absoluta para no desplazar el
+                        centro del numeral. */}
+                    <div className="relative">
+                      <p className={`text-center font-black text-high-contrast ${denso ? 'text-sm' : 'text-base'}`}>
                         {romano(i)}
-                      </span>
+                      </p>
                       {med.cantidad.trim() && (
-                        <span className={`font-bold text-high-contrast/80 text-right ${denso ? 'text-xs' : 'text-sm'}`}>
+                        <span className={`absolute right-0 top-0 max-w-[40%] text-right font-bold text-high-contrast/80 ${denso ? 'text-xs' : 'text-sm'}`}>
                           {med.cantidad.trim()}
                         </span>
                       )}
                     </div>
-                    <p className={`font-medium text-high-contrast ${denso ? 'text-sm leading-snug' : 'text-base leading-relaxed'}`}>
+                    <p className={`text-center font-medium text-high-contrast ${denso ? 'text-sm leading-snug' : 'text-base leading-relaxed'}`}>
                       {med.nombre.trim()}
                     </p>
                   </li>
