@@ -515,7 +515,7 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                         src={formData.watermarkUrl}
                         alt="Marca de agua"
                         className="max-w-full max-h-full object-contain"
-                        style={{ filter: 'brightness(1.35) contrast(0.30)', opacity: 0.55 }}
+                        style={{ opacity: 0.18 }}
                       />
                     </div>
                     <p className="mt-2 text-[10px] text-high-contrast/40">Asi se vera en el papel</p>

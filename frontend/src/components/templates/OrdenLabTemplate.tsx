@@ -77,9 +77,10 @@ export const OrdenLabTemplate = ({
   return (
     <div
       ref={documentRef}
-      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-10 relative flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
+      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-10 relative isolate flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
     >
       <MarcaDeAgua watermarkUrl={watermarkUrl} watermarkEn={watermarkEn} tipo="orden_lab" />
+      {/* El contenido va sobre la marca de agua. */}
       {/* Encabezado — logo o nombre, y especialidades debajo */}
       <div className="flex flex-col items-center text-center gap-1 shrink-0">
         {doctorLogoUrl ? (

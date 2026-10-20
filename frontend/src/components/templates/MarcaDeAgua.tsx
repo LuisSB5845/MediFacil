@@ -46,9 +46,16 @@ export const MarcaDeAgua = ({
           width: `${ANCHO_PX}px`,
           height: `${ALTO_PX}px`,
           objectFit: 'contain',
-          // El "decolorar" de Word: contraste al 30% y brillo subido.
-          filter: 'brightness(1.35) contrast(0.30)',
-          opacity: 0.55,
+          /*
+           * El lavado va solo con opacidad. `contrast()` y `mix-blend-mode`
+           * se evitan a proposito: html2canvas, que genera el PDF, no los
+           * respeta de forma fiable, y sobre una imagen ya transparente el
+           * resultado seria distinto en pantalla y en papel.
+           *
+           * Si la imagen cargada tuviera fondo blanco solido, se veria como un
+           * recuadro claro; por eso conviene subirla en PNG con transparencia.
+           */
+          opacity: 0.18,
         }}
       />
     </div>
