@@ -1,5 +1,6 @@
 import React from 'react';
-import { RecetaRxData } from '../../types';
+import { CertificationType, RecetaRxData } from '../../types';
+import { MarcaDeAgua } from './MarcaDeAgua';
 import { medicamentosUtiles, romano } from '../../lib/recetaMedicamentos';
 
 // Plantilla FIJA de Receta Rx. El doctor no edita el layout — solo
@@ -20,6 +21,9 @@ interface Props {
   phoneOffice?: string;
   phoneExt?: string;
   phoneCell?: string;
+  /** Marca de agua: imagen y tipos en los que debe aparecer. */
+  watermarkUrl?: string;
+  watermarkEn?: CertificationType[];
   documentRef?: React.RefObject<HTMLDivElement>;
 }
 
@@ -39,6 +43,8 @@ export const RecetaRxTemplate = ({
   phoneExt,
   phoneCell,
   documentRef,
+  watermarkUrl,
+  watermarkEn,
 }: Props) => {
   // Receta estructurada: solo los renglones con nombre. Sin ellos se imprime
   // el texto libre, que es como nacieron las recetas anteriores.
@@ -54,6 +60,7 @@ export const RecetaRxTemplate = ({
       ref={documentRef}
       className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
     >
+      <MarcaDeAgua watermarkUrl={watermarkUrl} watermarkEn={watermarkEn} tipo="receta" />
       {/* Encabezado — logo personal + nombre + especialidad, centrado, estilo recetario físico */}
       <div className="flex flex-col items-center text-center gap-2 pb-6 shrink-0">
         <div className="w-full flex items-center justify-center">

@@ -1,5 +1,6 @@
 import React from 'react';
-import { UserProfile } from '../../types';
+import { CertificationType, UserProfile } from '../../types';
+import { MarcaDeAgua } from './MarcaDeAgua';
 
 /**
  * Membrete y pie de firma del Centro Médico, comunes a las tres plantillas
@@ -62,14 +63,23 @@ export const FirmaMedico = ({
 export const HojaDocumento = ({
   children,
   documentRef,
+  profile,
+  tipo,
 }: {
   children: React.ReactNode;
   documentRef?: React.RefObject<HTMLDivElement>;
+  /** Para la marca de agua; sin ellos la hoja sale limpia. */
+  profile?: UserProfile | null;
+  tipo?: CertificationType;
 }) => (
   <div
     ref={documentRef}
-    className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] w-full max-w-[816px] mx-auto"
+    className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
   >
-    {children}
+    {tipo && <MarcaDeAgua profile={profile} tipo={tipo} />}
+    {/* Sobre la marca de agua, que va al fondo. */}
+    <div className="relative z-10 flex-1 flex flex-col min-h-0">
+      {children}
+    </div>
   </div>
 );

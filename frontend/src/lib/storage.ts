@@ -1,4 +1,4 @@
-export type LogoType = 'clinic' | 'doctor';
+export type LogoType = 'clinic' | 'doctor' | 'watermark';
 
 /**
  * Dimensiones máximas del logo ya comprimido.
@@ -9,6 +9,12 @@ export const LOGO_MAX_WIDTH = 300;
 export const LOGO_MAX_HEIGHT = 300;
 export const DOCTOR_LOGO_MAX_WIDTH = 600;
 export const DOCTOR_LOGO_MAX_HEIGHT = 600;
+/**
+ * La marca de agua se imprime lavada y detras del texto, asi que no necesita
+ * nitidez: basta con que aguante el tamano al que sale en la hoja.
+ */
+export const WATERMARK_MAX_WIDTH = 500;
+export const WATERMARK_MAX_HEIGHT = 700;
 /** Calidad de reexportación JPEG. */
 export const LOGO_QUALITY = 0.7;
 /**
@@ -131,9 +137,14 @@ export async function uploadLogoImage(
   }
 
   // 3. Comprimir en el navegador (sin Firebase Storage)
-  const isDoctor = type === 'doctor';
-  const maxWidth = isDoctor ? DOCTOR_LOGO_MAX_WIDTH : LOGO_MAX_WIDTH;
-  const maxHeight = isDoctor ? DOCTOR_LOGO_MAX_HEIGHT : LOGO_MAX_HEIGHT;
+  const maxWidth =
+    type === 'doctor' ? DOCTOR_LOGO_MAX_WIDTH
+    : type === 'watermark' ? WATERMARK_MAX_WIDTH
+    : LOGO_MAX_WIDTH;
+  const maxHeight =
+    type === 'doctor' ? DOCTOR_LOGO_MAX_HEIGHT
+    : type === 'watermark' ? WATERMARK_MAX_HEIGHT
+    : LOGO_MAX_HEIGHT;
 
   // 4. Ajustar hasta que quepa en el documento de Firestore. La resolución se
   // mantiene: lo que cede es la calidad JPEG.

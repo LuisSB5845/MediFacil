@@ -2,35 +2,57 @@ import React, { useState, useRef } from 'react';
 import { Camera, BadgeCheck, User as UserIcon, Stethoscope, Building2, Image as ImageIcon, Upload, Loader2, Trash2, Phone, MapPin, Award } from 'lucide-react';
 import { UserProfile } from '../types';
 import { cn } from '../lib/utils';
-import { uploadLogoImage } from '../lib/storage';
+import { LogoType, uploadLogoImage } from '../lib/storage';
+import { CertificationType } from '../types';
+import { ETIQUETA_TIPO, TIPOS_FILTRABLES } from '../lib/documentTypes';
+
+/** Campo del perfil donde vive cada imagen. */
+const CAMPO_IMAGEN: Record<LogoType, 'clinicLogoUrl' | 'doctorLogoUrl' | 'watermarkUrl'> = {
+  clinic: 'clinicLogoUrl',
+  doctor: 'doctorLogoUrl',
+  watermark: 'watermarkUrl',
+};
 
 export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; onUpdate: (u: Partial<UserProfile>) => void }) => {
   const [formData, setFormData] = useState<Partial<UserProfile>>(user || {});
   const [uploadingClinicLogo, setUploadingClinicLogo] = useState(false);
   const [uploadingDoctorLogo, setUploadingDoctorLogo] = useState(false);
+  const [uploadingWatermark, setUploadingWatermark] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const clinicLogoInputRef = useRef<HTMLInputElement>(null);
   const doctorLogoInputRef = useRef<HTMLInputElement>(null);
+  const watermarkInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdate(formData);
   };
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'clinic' | 'doctor') => {
+  /** Marca o desmarca un tipo de documento para la marca de agua. */
+  const alternarMarcaEn = (tipo: CertificationType) => {
+    const actuales = formData.watermarkEn || [];
+    const siguientes = actuales.includes(tipo)
+      ? actuales.filter(t => t !== tipo)
+      : [...actuales, tipo];
+    setFormData(prev => ({ ...prev, watermarkEn: siguientes }));
+    onUpdate({ watermarkEn: siguientes });
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: LogoType) => {
     const file = e.target.files?.[0];
     if (!file || !user?.uid) return;
 
     setUploadError(null);
     if (type === 'clinic') setUploadingClinicLogo(true);
+    else if (type === 'watermark') setUploadingWatermark(true);
     else setUploadingDoctorLogo(true);
 
     try {
       // Devuelve un data URI Base64 comprimido en JPEG. No hay Storage:
       // el string se guarda directamente en el documento del usuario.
       const dataUri = await uploadLogoImage(file, user.uid, type);
-      const field = type === 'clinic' ? 'clinicLogoUrl' : 'doctorLogoUrl';
+      const field = CAMPO_IMAGEN[type];
       setFormData(prev => ({ ...prev, [field]: dataUri }));
       onUpdate({ [field]: dataUri });
     } catch (err: any) {
@@ -38,13 +60,14 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
       setUploadError(err.message || 'Error al subir la imagen.');
     } finally {
       if (type === 'clinic') setUploadingClinicLogo(false);
+      else if (type === 'watermark') setUploadingWatermark(false);
       else setUploadingDoctorLogo(false);
       if (e.target) e.target.value = '';
     }
   };
 
-  const handleRemoveLogo = (type: 'clinic' | 'doctor') => {
-    const field = type === 'clinic' ? 'clinicLogoUrl' : 'doctorLogoUrl';
+  const handleRemoveLogo = (type: LogoType) => {
+    const field = CAMPO_IMAGEN[type];
     setFormData(prev => ({ ...prev, [field]: '' }));
     onUpdate({ [field]: '' });
   };
@@ -458,6 +481,116 @@ export const SettingsScreen = ({ user, onUpdate }: { user: UserProfile | null; o
                 )}
               </div>
 
+            </div>
+          </section>
+
+          {/* --- Marca de agua --- */}
+          <section className="card-atelier p-8 md:p-10 space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="title-atelier text-secondary">Marca de Agua</h3>
+                <p className="text-xs text-high-contrast/50">
+                  Se imprime detras del texto, centrada y difuminada
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              {/* Imagen */}
+              <div className="p-6 bg-surface-low rounded-2xl border border-dashed border-surface-container-high flex flex-col items-center justify-center">
+                <input
+                  ref={watermarkInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml"
+                  className="hidden"
+                  onChange={(e) => handleLogoUpload(e, 'watermark')}
+                />
+                {formData.watermarkUrl ? (
+                  <div className="relative group w-full flex flex-col items-center">
+                    <div className="w-28 h-36 bg-white border border-surface-container-high rounded-xl p-2 flex items-center justify-center shadow-sm overflow-hidden">
+                      <img
+                        src={formData.watermarkUrl}
+                        alt="Marca de agua"
+                        className="max-w-full max-h-full object-contain"
+                        style={{ filter: 'brightness(1.35) contrast(0.30)', opacity: 0.55 }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[10px] text-high-contrast/40">Asi se vera en el papel</p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => watermarkInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-white border border-surface-container-high rounded-lg text-xs font-bold text-secondary hover:bg-surface-low transition-colors"
+                      >
+                        Reemplazar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLogo('watermark')}
+                        className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                        title="Eliminar marca de agua"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center space-y-3 py-4">
+                    <div className="w-12 h-12 rounded-xl bg-white border border-surface-container-high flex items-center justify-center text-high-contrast/30">
+                      {uploadingWatermark ? <Loader2 className="w-6 h-6 animate-spin text-secondary" /> : <Upload className="w-6 h-6" />}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-secondary">Cargar Marca de Agua</p>
+                      <p className="text-[10px] text-high-contrast/40">PNG, JPG o SVG</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={uploadingWatermark}
+                      onClick={() => watermarkInputRef.current?.click()}
+                      className="btn-secondary py-2 px-4 text-xs"
+                    >
+                      {uploadingWatermark ? "Procesando..." : "Seleccionar Archivo"}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Documentos en los que aparece */}
+              <div className="space-y-3">
+                <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">
+                  Aparece en
+                </label>
+                {!formData.watermarkUrl && (
+                  <p className="text-[11px] text-high-contrast/40">
+                    Carga una imagen para elegir en que documentos aparece.
+                  </p>
+                )}
+                {TIPOS_FILTRABLES.map(tipo => (
+                  <label
+                    key={tipo}
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-xl border transition-colors",
+                      formData.watermarkUrl
+                        ? "cursor-pointer border-surface-container-high hover:bg-surface-low"
+                        : "border-surface-container-low opacity-40 pointer-events-none"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={(formData.watermarkEn || []).includes(tipo)}
+                      onChange={() => alternarMarcaEn(tipo)}
+                      disabled={!formData.watermarkUrl}
+                      className="w-4 h-4 accent-[#191970] cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-high-contrast/70">
+                      {ETIQUETA_TIPO[tipo]}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           </section>
 

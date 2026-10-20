@@ -524,6 +524,8 @@ export const RecetasScreen = ({
               phoneOffice={profile?.phoneOffice}
               phoneExt={profile?.phoneExt}
               phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
             />
           ) : (
             <RecetaRxTemplate
@@ -542,6 +544,8 @@ export const RecetasScreen = ({
               phoneOffice={profile?.phoneOffice}
               phoneExt={profile?.phoneExt}
               phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
             />
           )}
         </div>

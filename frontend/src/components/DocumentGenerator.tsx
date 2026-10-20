@@ -1421,6 +1421,8 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                           phoneOffice={profile?.phoneOffice}
                           phoneExt={profile?.phoneExt}
                           phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
                         />
                       )}
                       {plantilla === 'orden_lab' && (
@@ -1439,6 +1441,8 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                           phoneOffice={profile?.phoneOffice}
                           phoneExt={profile?.phoneExt}
                           phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
                         />
                       )}
                       {plantilla === 'certificado' && (

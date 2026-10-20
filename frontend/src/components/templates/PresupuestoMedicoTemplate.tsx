@@ -48,7 +48,7 @@ export const PresupuestoMedicoTemplate = ({
   const total = totalPresupuesto(conMonto);
 
   return (
-    <HojaDocumento documentRef={documentRef}>
+    <HojaDocumento documentRef={documentRef} profile={profile} tipo="presupuesto">
       <MembreteClinica profile={profile} />
 
       <h1 className="text-2xl font-black text-high-contrast uppercase tracking-[0.15em] text-center pt-14 shrink-0">

@@ -67,6 +67,13 @@ export interface UserProfile {
   phoneCell?: string;
   clinicLogoUrl?: string;
   doctorLogoUrl?: string;
+  /** Marca de agua impresa detras del texto, en los documentos elegidos. */
+  watermarkUrl?: string;
+  /**
+   * Tipos de documento que llevan la marca de agua. Si falta, no se imprime
+   * en ninguno: la marca se activa marcando casillas, no por tener imagen.
+   */
+  watermarkEn?: CertificationType[];
   consultationsThisMonth?: number;
   documentsThisMonth?: number;
   usageResetDate?: string;
