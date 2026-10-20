@@ -101,11 +101,27 @@ export interface NarrativeCertificationData {
   date: string;
 }
 
+/** Un renglon de la receta estructurada: que se receta y cuanto. */
+export interface Medicamento {
+  nombre: string;
+  cantidad: string;
+}
+
 export interface RecetaRxData {
   nombrePaciente: string;
   fecha: string;
-  /** Cuerpo de la receta en texto libre, tal cual lo escribió el doctor. */
+  /**
+   * Cuerpo de la receta en texto libre, tal cual lo escribió el doctor.
+   * Se escribe SIEMPRE, incluso en modo estructurado (derivado de la lista):
+   * de el dependen el listado, la vista previa y el guard que decide si un
+   * documento se puede abrir.
+   */
   contenido: string;
+  /**
+   * Si viene, la receta se escribio medicamento por medicamento y se imprime
+   * como lista numerada en romanos. Si falta, es una receta de texto libre.
+   */
+  medicamentos?: Medicamento[];
 }
 
 export interface OrdenLabData {

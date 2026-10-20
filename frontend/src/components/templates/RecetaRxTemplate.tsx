@@ -1,14 +1,9 @@
 import React from 'react';
+import { RecetaRxData } from '../../types';
+import { medicamentosUtiles, romano } from '../../lib/recetaMedicamentos';
 
 // Plantilla FIJA de Receta Rx. El doctor no edita el layout — solo
 // llega el objeto de datos validado (RecetaRxData) desde la IA.
-
-export interface RecetaRxData {
-  nombrePaciente: string;
-  fecha: string;
-  /** Cuerpo de la receta en texto libre, tal cual lo escribió el doctor. */
-  contenido: string;
-}
 
 interface Props {
   data: RecetaRxData;
@@ -45,12 +40,19 @@ export const RecetaRxTemplate = ({
   phoneCell,
   documentRef,
 }: Props) => {
+  // Receta estructurada: solo los renglones con nombre. Sin ellos se imprime
+  // el texto libre, que es como nacieron las recetas anteriores.
+  const medicamentos = medicamentosUtiles(data.medicamentos || []);
+  // El cuerpo tiene unos 220-260px utiles y cada medicamento ocupa dos lineas:
+  // de cinco en adelante hay que apretar para no desbordar la pagina.
+  const denso = medicamentos.length >= 5;
+
   // Proporción real de una hoja carta (8.5x11" a 96dpi = 816x1056px), para que
   // lo que se ve en pantalla sea lo que sale en papel, sin reescalados.
   return (
     <div
       ref={documentRef}
-      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] w-full max-w-[816px] mx-auto"
+      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
     >
       {/* Encabezado — logo personal + nombre + especialidad, centrado, estilo recetario físico */}
       <div className="flex flex-col items-center text-center gap-2 pb-6 shrink-0">
@@ -92,11 +94,35 @@ export const RecetaRxTemplate = ({
             <span>Fecha: {data.fecha}</span>
           </div>
 
-          {/* Cuerpo — texto libre del doctor, con los saltos de línea intactos */}
+          {/* Cuerpo — lista de medicamentos, o el texto libre tal cual lo escribio */}
           <div className="px-2">
-            <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-              {data.contenido}
-            </p>
+            {medicamentos.length > 0 ? (
+              <ol className={denso ? 'space-y-3' : 'space-y-6'}>
+                {medicamentos.map((med, i) => (
+                  <li key={i} className="break-words [overflow-wrap:anywhere]">
+                    {/* Numeral y cantidad arriba; el medicamento debajo, como
+                        en el recetario impreso. */}
+                    <div className="flex items-baseline justify-between gap-6">
+                      <span className={`font-black text-high-contrast ${denso ? 'text-sm' : 'text-base'}`}>
+                        {romano(i)}
+                      </span>
+                      {med.cantidad.trim() && (
+                        <span className={`font-bold text-high-contrast/80 text-right ${denso ? 'text-xs' : 'text-sm'}`}>
+                          {med.cantidad.trim()}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`font-medium text-high-contrast ${denso ? 'text-sm leading-snug' : 'text-base leading-relaxed'}`}>
+                      {med.nombre.trim()}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {data.contenido}
+              </p>
+            )}
           </div>
 
           {/* Nombre / Fecha / Firma — pie fijo dentro del marco */}
