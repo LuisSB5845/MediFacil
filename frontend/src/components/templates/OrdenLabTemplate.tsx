@@ -1,5 +1,7 @@
 import React from 'react';
 import { ORDEN_LAB_COLUMNAS } from '../../lib/ordenLabCatalog';
+import { CertificationType } from '../../types';
+import { MarcaDeAgua } from './MarcaDeAgua';
 
 // Plantilla FIJA de orden de laboratorio y estudios. Replica el formulario
 // impreso: salen las ~90 casillas, marcadas las que el médico seleccionó.
@@ -28,6 +30,9 @@ interface Props {
   phoneOffice?: string;
   phoneExt?: string;
   phoneCell?: string;
+  /** Marca de agua: imagen y tipos en los que debe aparecer. */
+  watermarkUrl?: string;
+  watermarkEn?: CertificationType[];
   documentRef?: React.RefObject<HTMLDivElement>;
 }
 
@@ -63,6 +68,8 @@ export const OrdenLabTemplate = ({
   phoneExt,
   phoneCell,
   documentRef,
+  watermarkUrl,
+  watermarkEn,
 }: Props) => {
   const marcados = new Set(data.seleccionados);
 
@@ -70,8 +77,10 @@ export const OrdenLabTemplate = ({
   return (
     <div
       ref={documentRef}
-      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-10 relative flex flex-col min-h-[1056px] w-full max-w-[816px] mx-auto"
+      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-10 relative isolate flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
     >
+      <MarcaDeAgua watermarkUrl={watermarkUrl} watermarkEn={watermarkEn} tipo="orden_lab" />
+      {/* El contenido va sobre la marca de agua. */}
       {/* Encabezado — logo o nombre, y especialidades debajo */}
       <div className="flex flex-col items-center text-center gap-1 shrink-0">
         {doctorLogoUrl ? (

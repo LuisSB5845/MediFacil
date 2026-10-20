@@ -68,6 +68,8 @@ export const DocumentViewerModal = ({
     phoneOffice: profile?.phoneOffice,
     phoneExt: profile?.phoneExt,
     phoneCell: profile?.phoneCell,
+    watermarkUrl: profile?.watermarkUrl,
+    watermarkEn: profile?.watermarkEn,
   };
 
   const renderDocumento = () => {

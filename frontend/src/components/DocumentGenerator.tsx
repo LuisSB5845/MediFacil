@@ -9,6 +9,9 @@ import {
   Calendar,
   ArrowLeft,
   ChevronDown,
+  ChevronUp,
+  Trash2,
+  Plus,
   ChevronLeft,
   ChevronRight,
   FileDown,
@@ -33,9 +36,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { collection, query, where, getDocs, limit, addDoc, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { UserProfile, ClinicalDocument, Patient, CertificationType, RecetaRxData, OrdenLabData } from '../types';
+import { UserProfile, ClinicalDocument, Patient, CertificationType, RecetaRxData, OrdenLabData, Medicamento } from '../types';
 import { etiquetaDocumento } from '../lib/documentTypes';
 import { OrdenLabCampos } from './OrdenLabCampos';
+import {
+  LIMITE_MEDICAMENTOS, aTextoLibre, desdeTextoLibre, medicamentoVacio,
+  medicamentosUtiles, romano,
+} from '../lib/recetaMedicamentos';
 import { RecetaRxTemplate } from './templates/RecetaRxTemplate';
 import { OrdenLabTemplate } from './templates/OrdenLabTemplate';
 import { cn } from '../lib/utils';
@@ -65,17 +72,18 @@ export type PlantillaId = 'certificado' | 'nacimiento' | 'presupuesto' | 'receta
 
 /** Las que la IA sabe rellenar. Receta usa su propia mejora de texto, y la
  *  orden de laboratorio es seleccion manual de estudios. */
-type PlantillaIA = 'certificado' | 'nacimiento' | 'presupuesto';
+type PlantillaIA = 'certificado' | 'nacimiento' | 'presupuesto' | 'receta';
 
 /** Estilos compartidos por los campos de las plantillas. */
 const LBL = 'text-[10px] font-black text-high-contrast/30 uppercase tracking-widest px-1';
 const INPUT = 'w-full h-14 px-5 bg-surface-low border border-surface-container-high rounded-2xl text-sm font-bold focus:outline-none focus:border-primary transition-all hover:bg-white';
 
 /** Tipo de documento estructurado que pide cada plantilla al backend. */
-const AI_TARGET: Record<PlantillaIA, 'certificado' | 'birth' | 'presupuesto'> = {
+const AI_TARGET: Record<PlantillaIA, 'certificado' | 'birth' | 'presupuesto' | 'receta'> = {
   certificado: 'certificado',
   nacimiento: 'birth',
   presupuesto: 'presupuesto',
+  receta: 'receta',
 };
 
 /** Tipo con el que se archiva cada plantilla. La etiqueta visible es aparte. */
@@ -88,7 +96,7 @@ const PLANTILLA_TIPO: Record<PlantillaId, CertificationType> = {
 };
 
 /** Plantillas que la IA puede rellenar desde una descripcion libre. */
-const PLANTILLAS_IA: PlantillaIA[] = ['certificado', 'nacimiento', 'presupuesto'];
+const PLANTILLAS_IA: PlantillaIA[] = ['receta', 'certificado', 'nacimiento', 'presupuesto'];
 
 const PLANTILLAS: { id: PlantillaId; label: string }[] = [
   { id: 'receta', label: 'Receta Rx' },
@@ -157,6 +165,9 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
   const [recetaFecha, setRecetaFecha] = useState(hoy);
   const [recetaContenido, setRecetaContenido] = useState('');
   const [mejorandoReceta, setMejorandoReceta] = useState(false);
+  // Modo estructurado: la receta se escribe medicamento por medicamento.
+  const [recetaEstructurada, setRecetaEstructurada] = useState(false);
+  const [recetaMedicamentos, setRecetaMedicamentos] = useState<Medicamento[]>([medicamentoVacio()]);
 
   // Orden de laboratorio: seleccion manual de estudios, sin IA.
   const [labFecha, setLabFecha] = useState(hoy);
@@ -176,11 +187,40 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
   const [docPatient, setDocPatient] = useState<Patient | null>(null);
   /** Nombre del paciente elegido, que es como se imprime en las plantillas. */
   const docPatientNombre = docPatient?.name || '';
+  // En modo estructurado el texto libre se deriva de la lista: `contenido` se
+  // guarda siempre, porque de el dependen el listado y el visor.
   const recetaData: RecetaRxData = {
     nombrePaciente: docPatientNombre || 'N/E',
     fecha: recetaFecha.trim() || hoy,
-    contenido: recetaContenido.trim(),
+    contenido: recetaEstructurada ? aTextoLibre(recetaMedicamentos) : recetaContenido.trim(),
+    ...(recetaEstructurada ? { medicamentos: medicamentosUtiles(recetaMedicamentos) } : {}),
   };
+
+  /** Cambia entre texto libre y lista, conservando lo ya escrito. */
+  const alternarModoReceta = (estructurada: boolean) => {
+    if (estructurada) {
+      setRecetaMedicamentos(desdeTextoLibre(recetaContenido));
+    } else {
+      setRecetaContenido(aTextoLibre(recetaMedicamentos));
+    }
+    setRecetaEstructurada(estructurada);
+  };
+
+  const editarMedicamento = (i: number, campo: keyof Medicamento, valor: string) =>
+    setRecetaMedicamentos(prev => prev.map((m, j) => (j === i ? { ...m, [campo]: valor } : m)));
+
+  const quitarMedicamento = (i: number) =>
+    setRecetaMedicamentos(prev => (prev.length === 1 ? [medicamentoVacio()] : prev.filter((_, j) => j !== i)));
+
+  /** Mueve un medicamento; los romanos se recalculan solos al renumerar. */
+  const moverMedicamento = (i: number, delta: number) =>
+    setRecetaMedicamentos(prev => {
+      const destino = i + delta;
+      if (destino < 0 || destino >= prev.length) return prev;
+      const copia = [...prev];
+      [copia[i], copia[destino]] = [copia[destino], copia[i]];
+      return copia;
+    });
 
   const ordenLabData: OrdenLabData = {
     nombrePaciente: docPatientNombre || 'N/E',
@@ -465,8 +505,10 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
     
     try {
       if (view === 'template') {
-        if (plantilla === 'receta' && !recetaContenido.trim()) {
-          alert('Escribe el contenido de la receta antes de generarla.');
+        if (plantilla === 'receta' && !recetaData.contenido.trim()) {
+          alert(recetaEstructurada
+            ? 'Agrega al menos un medicamento antes de generar la receta.'
+            : 'Escribe el contenido de la receta antes de generarla.');
           setIsGenerating(false);
           return;
         }
@@ -531,10 +573,17 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
         const pacienteIA: string = docPatient?.name || (
           aiPlantilla === 'nacimiento' ? d.nombreMadre
           : aiPlantilla === 'presupuesto' ? d.nombrePaciente
+          : aiPlantilla === 'receta' ? d.nombrePaciente
           : d.paciente
         ) || '';
 
-        if (aiPlantilla === 'nacimiento') {
+        if (aiPlantilla === 'receta') {
+          if (d.fecha) setRecetaFecha(d.fecha);
+          // La IA devuelve texto: se muestra en modo libre, no sobre la lista.
+          setRecetaEstructurada(false);
+          setRecetaContenido(d.contenido || '');
+          titleText = `Receta Rx - ${pacienteIA || 'Paciente'}`;
+        } else if (aiPlantilla === 'nacimiento') {
           setNac(prev => ({
             ...prev,
             nombreMadre: d.nombreMadre || '',
@@ -832,6 +881,16 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
 
   const renderSelection = () => (
     <div className="max-w-7xl mx-auto py-16 space-y-24 px-8">
+      {onVerDocumentos && (
+        <button
+          type="button"
+          onClick={onVerDocumentos}
+          className="flex items-center gap-3 bg-white border border-surface-container-high px-6 py-3 rounded-2xl hover:border-primary/30 transition-all group w-fit"
+        >
+          <ArrowLeft className="w-4 h-4 text-primary group-hover:-translate-x-1 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-widest">Volver a Documentos</span>
+        </button>
+      )}
       <div className="text-center space-y-4">
         <h1 className="text-5xl font-black text-primary tracking-tight">Generar Documento</h1>
         <p className="text-high-contrast/40 font-medium text-xl">Crea certificados, cartas y documentos médicos con IA.</p>
@@ -992,6 +1051,91 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                     {/* --- Receta Rx: texto libre, con mejora opcional por IA --- */}
                     {plantilla === 'receta' && (
                       <div className="space-y-8">
+                        {/* Modo de escritura: texto libre o medicamento por medicamento */}
+                        <label className="flex items-center gap-3 cursor-pointer w-fit">
+                          <input
+                            type="checkbox"
+                            checked={recetaEstructurada}
+                            onChange={(e) => alternarModoReceta(e.target.checked)}
+                            className="w-4 h-4 accent-[#191970] cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-high-contrast/70">
+                            Escribir los medicamentos uno por uno
+                          </span>
+                        </label>
+
+                        {recetaEstructurada ? (
+                        <div className="space-y-4">
+                          <label className={LBL}>Medicamentos</label>
+
+                          {recetaMedicamentos.map((med, i) => (
+                            <div
+                              key={i}
+                              className="p-5 bg-surface-low border border-surface-container-high rounded-2xl space-y-3"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-lg font-black text-primary italic">{romano(i)}</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => moverMedicamento(i, -1)}
+                                    disabled={i === 0}
+                                    title="Subir"
+                                    className="p-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-25 disabled:pointer-events-none"
+                                  >
+                                    <ChevronUp className="w-4 h-4 text-high-contrast/50" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => moverMedicamento(i, 1)}
+                                    disabled={i === recetaMedicamentos.length - 1}
+                                    title="Bajar"
+                                    className="p-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-25 disabled:pointer-events-none"
+                                  >
+                                    <ChevronDown className="w-4 h-4 text-high-contrast/50" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => quitarMedicamento(i)}
+                                    title="Quitar"
+                                    className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-high-contrast/40 hover:text-red-600" />
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                className={INPUT}
+                                placeholder="Nombre del medicamento (ej. Amoxicilina 500mg)"
+                                value={med.nombre}
+                                onChange={(e) => editarMedicamento(i, 'nombre', e.target.value)}
+                              />
+                              <input
+                                type="text"
+                                className={INPUT}
+                                placeholder="Cantidad recetada (ej. 1 caja, 2 tabletas al dia)"
+                                value={med.cantidad}
+                                onChange={(e) => editarMedicamento(i, 'cantidad', e.target.value)}
+                              />
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={() => setRecetaMedicamentos(prev => [...prev, medicamentoVacio()])}
+                            disabled={recetaMedicamentos.length >= LIMITE_MEDICAMENTOS}
+                            className="w-full h-14 border-2 border-dashed border-primary/30 rounded-2xl text-xs font-black uppercase tracking-widest text-primary flex items-center justify-center gap-2 hover:bg-primary/5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            <Plus className="w-4 h-4" /> Agregar medicamento
+                          </button>
+                          {recetaMedicamentos.length >= LIMITE_MEDICAMENTOS && (
+                            <p className="text-[11px] text-high-contrast/40 text-center">
+                              Maximo {LIMITE_MEDICAMENTOS} medicamentos por receta, para que todo quepa en una pagina.
+                            </p>
+                          )}
+                        </div>
+                        ) : (
                         <div className="space-y-3">
                           <label className={LBL}>Contenido de la receta</label>
                           <textarea
@@ -1005,6 +1149,7 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                             <p className="text-[11px] text-high-contrast/40">
                               Se imprime tal cual lo escribas, con los saltos de linea incluidos.
                             </p>
+                            {/* La IA reescribe texto: en modo lista no aplica. */}
                             <button
                               type="button"
                               onClick={mejorarRecetaConIA}
@@ -1018,6 +1163,7 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                             </button>
                           </div>
                         </div>
+                        )}
                         <div className="space-y-3">
                           <label className={LBL}>Fecha</label>
                           <input
@@ -1275,6 +1421,8 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                           phoneOffice={profile?.phoneOffice}
                           phoneExt={profile?.phoneExt}
                           phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
                         />
                       )}
                       {plantilla === 'orden_lab' && (
@@ -1293,6 +1441,8 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                           phoneOffice={profile?.phoneOffice}
                           phoneExt={profile?.phoneExt}
                           phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
                         />
                       )}
                       {plantilla === 'certificado' && (

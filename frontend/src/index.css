@@ -236,6 +236,12 @@ html {
     max-width: none !important;
     width: 100% !important;
     min-height: 100vh !important;
+    /* Una receta es siempre UNA pagina: sin el tope, un cuerpo largo estiraba
+       la hoja y el navegador la partia en dos, cortando el marco por la mitad. */
+    max-height: 100vh !important;
+    overflow: hidden !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;

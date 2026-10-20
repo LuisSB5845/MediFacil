@@ -3,12 +3,17 @@ import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'f
 import { motion } from 'motion/react';
 import {
   Pill, Search, ArrowLeft, FileDown, Printer, Loader2, FileText, Calendar,
-  Eye, Edit3, Trash2, Check, FlaskConical, Baby, Receipt, Stethoscope, X,
+  Eye, Edit3, Trash2, Check, FlaskConical, Baby, Receipt, Stethoscope, X, Plus,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { db } from '../lib/firebase';
-import { CertificationType, ClinicalDocument, OrdenLabData, RecetaRxData, UserProfile } from '../types';
+import { CertificationType, ClinicalDocument, Medicamento, OrdenLabData, RecetaRxData, UserProfile } from '../types';
+import {
+  LIMITE_MEDICAMENTOS, aTextoLibre, desdeTextoLibre, medicamentoVacio,
+  medicamentosUtiles, romano,
+} from '../lib/recetaMedicamentos';
 import { RecetaRxTemplate } from '../components/templates/RecetaRxTemplate';
 import { OrdenLabTemplate } from '../components/templates/OrdenLabTemplate';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
@@ -100,11 +105,15 @@ export const RecetasScreen = ({
   doctorUid,
   profile,
   onDeleteReceta,
+  onGenerar,
 }: {
   doctorUid: string;
   profile: UserProfile | null;
   /** Usa el mismo modal de confirmación que el historial médico. */
   onDeleteReceta: (recetaId: string) => void;
+  /** Lleva al generador. Esta pantalla es la unica puerta a los documentos:
+   *  se consultan aqui y se crean desde aqui. */
+  onGenerar: () => void;
 }) => {
   const [recetas, setRecetas] = useState<ClinicalDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,6 +132,9 @@ export const RecetasScreen = ({
   const [editPaciente, setEditPaciente] = useState('');
   const [editFecha, setEditFecha] = useState('');
   const [editContenido, setEditContenido] = useState('');
+  // Modo estructurado, igual que en el generador.
+  const [editEstructurada, setEditEstructurada] = useState(false);
+  const [editMedicamentos, setEditMedicamentos] = useState<Medicamento[]>([medicamentoVacio()]);
   const [isSaving, setIsSaving] = useState(false);
 
   const documentRef = useRef<HTMLDivElement>(null);
@@ -197,7 +209,48 @@ export const RecetasScreen = ({
     setEditPaciente(data?.nombrePaciente || receta.patientName || '');
     setEditFecha(data?.fecha || '');
     setEditContenido(data?.contenido || '');
+    // Si se escribio como lista, se reabre como lista.
+    const meds = data?.medicamentos;
+    setEditEstructurada(Boolean(meds && meds.length > 0));
+    setEditMedicamentos(meds && meds.length > 0 ? meds : [medicamentoVacio()]);
   };
+
+  /** Texto libre vigente: derivado de la lista cuando esta en modo estructurado. */
+  const editContenidoFinal = editEstructurada
+    ? aTextoLibre(editMedicamentos)
+    : editContenido.trim();
+
+  const alternarModoEdicion = (estructurada: boolean) => {
+    if (estructurada) {
+      setEditMedicamentos(desdeTextoLibre(editContenido));
+    } else {
+      setEditContenido(aTextoLibre(editMedicamentos));
+    }
+    setEditEstructurada(estructurada);
+  };
+
+  const editarMedicamento = (i: number, campo: keyof Medicamento, valor: string) =>
+    setEditMedicamentos(prev => prev.map((m, j) => (j === i ? { ...m, [campo]: valor } : m)));
+
+  const quitarMedicamento = (i: number) =>
+    setEditMedicamentos(prev => (prev.length === 1 ? [medicamentoVacio()] : prev.filter((_, j) => j !== i)));
+
+  const moverMedicamento = (i: number, delta: number) =>
+    setEditMedicamentos(prev => {
+      const destino = i + delta;
+      if (destino < 0 || destino >= prev.length) return prev;
+      const copia = [...prev];
+      [copia[i], copia[destino]] = [copia[destino], copia[i]];
+      return copia;
+    });
+
+  /** Datos de la receta tal como se ven y se guardan. */
+  const editRecetaData = (): RecetaRxData => ({
+    nombrePaciente: editPaciente.trim(),
+    fecha: editFecha.trim(),
+    contenido: editContenidoFinal,
+    ...(editEstructurada ? { medicamentos: medicamentosUtiles(editMedicamentos) } : {}),
+  });
 
   const handleSaveEdit = async () => {
     if (!selected) return;
@@ -211,19 +264,17 @@ export const RecetasScreen = ({
       setError('Indica el nombre del paciente.');
       return;
     }
-    if (!editContenido.trim()) {
-      setError('La receta no puede quedar vacía.');
+    if (!editContenidoFinal) {
+      setError(editEstructurada
+        ? 'Agrega al menos un medicamento.'
+        : 'La receta no puede quedar vacía.');
       return;
     }
 
     setIsSaving(true);
     setError(null);
 
-    const data: RecetaRxData = {
-      nombrePaciente: editPaciente.trim(),
-      fecha: editFecha.trim(),
-      contenido: editContenido.trim(),
-    };
+    const data: RecetaRxData = editRecetaData();
 
     try {
       await updateDoc(doc(db, 'clinical_documents', selected.id), {
@@ -339,6 +390,90 @@ export const RecetasScreen = ({
                 />
               </div>
             </div>
+            <label className="flex items-center gap-3 cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={editEstructurada}
+                onChange={e => alternarModoEdicion(e.target.checked)}
+                className="w-4 h-4 accent-[#191970] cursor-pointer"
+              />
+              <span className="text-xs font-bold text-high-contrast/70">
+                Escribir los medicamentos uno por uno
+              </span>
+            </label>
+
+            {editEstructurada ? (
+            <div className="space-y-4">
+              <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Medicamentos</label>
+
+              {editMedicamentos.map((med, i) => (
+                <div
+                  key={i}
+                  className="p-5 bg-surface-low border border-surface-container-high rounded-2xl space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-lg font-black text-primary italic">{romano(i)}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moverMedicamento(i, -1)}
+                        disabled={i === 0}
+                        title="Subir"
+                        className="p-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-25 disabled:pointer-events-none"
+                      >
+                        <ChevronUp className="w-4 h-4 text-high-contrast/50" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moverMedicamento(i, 1)}
+                        disabled={i === editMedicamentos.length - 1}
+                        title="Bajar"
+                        className="p-1.5 rounded-lg hover:bg-white transition-colors disabled:opacity-25 disabled:pointer-events-none"
+                      >
+                        <ChevronDown className="w-4 h-4 text-high-contrast/50" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => quitarMedicamento(i)}
+                        title="Quitar"
+                        className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 text-high-contrast/40 hover:text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    className="input-field w-full"
+                    placeholder="Nombre del medicamento (ej. Amoxicilina 500mg)"
+                    value={med.nombre}
+                    onChange={e => editarMedicamento(i, 'nombre', e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    className="input-field w-full"
+                    placeholder="Cantidad recetada (ej. 1 caja, 2 tabletas al dia)"
+                    value={med.cantidad}
+                    onChange={e => editarMedicamento(i, 'cantidad', e.target.value)}
+                  />
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setEditMedicamentos(prev => [...prev, medicamentoVacio()])}
+                disabled={editMedicamentos.length >= LIMITE_MEDICAMENTOS}
+                className="w-full h-14 border-2 border-dashed border-primary/30 rounded-2xl text-xs font-black uppercase tracking-widest text-primary flex items-center justify-center gap-2 hover:bg-primary/5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Plus className="w-4 h-4" /> Agregar medicamento
+              </button>
+              {editMedicamentos.length >= LIMITE_MEDICAMENTOS && (
+                <p className="text-[11px] text-high-contrast/40 text-center">
+                  Maximo {LIMITE_MEDICAMENTOS} medicamentos por receta, para que todo quepa en una pagina.
+                </p>
+              )}
+            </div>
+            ) : (
             <div className="space-y-2">
               <label className="label-atelier text-high-contrast/40 uppercase tracking-widest text-[10px]">Contenido de la receta</label>
               <textarea
@@ -348,6 +483,7 @@ export const RecetasScreen = ({
                 onChange={e => setEditContenido(e.target.value)}
               />
             </div>
+            )}
             <div className="flex justify-end gap-4">
               <button
                 type="button"
@@ -388,12 +524,12 @@ export const RecetasScreen = ({
               phoneOffice={profile?.phoneOffice}
               phoneExt={profile?.phoneExt}
               phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
             />
           ) : (
             <RecetaRxTemplate
-              data={mode === 'edit'
-                ? { nombrePaciente: editPaciente, fecha: editFecha, contenido: editContenido }
-                : selectedData!}
+              data={mode === 'edit' ? editRecetaData() : selectedData!}
               documentRef={documentRef}
               doctorName={profile?.displayName || 'Médico'}
               specialty={profile?.specialty || ''}
@@ -408,6 +544,8 @@ export const RecetasScreen = ({
               phoneOffice={profile?.phoneOffice}
               phoneExt={profile?.phoneExt}
               phoneCell={profile?.phoneCell}
+              watermarkUrl={profile?.watermarkUrl}
+              watermarkEn={profile?.watermarkEn}
             />
           )}
         </div>
@@ -419,15 +557,24 @@ export const RecetasScreen = ({
   return (
     <div className="p-4 md:p-10 space-y-8">
       <div className="space-y-5">
-        <div className="relative max-w-md">
-          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
-          <input
-            type="text"
-            placeholder="Buscar por paciente o contenido..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input-field w-full pl-11"
-          />
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[16rem] max-w-md">
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-high-contrast/20" />
+            <input
+              type="text"
+              placeholder="Buscar por paciente o contenido..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input-field w-full pl-11"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onGenerar}
+            className="h-12 px-6 bg-primary text-white rounded-2xl text-sm font-black flex items-center gap-2.5 hover:bg-primary-container transition-all shadow-lg shadow-primary/30 shrink-0"
+          >
+            <Plus className="w-4 h-4" /> Generar documento
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -524,9 +671,13 @@ export const RecetasScreen = ({
               : 'Nada coincide con esos filtros.'}
           </p>
           {recetas.length === 0 ? (
-            <p className="text-xs text-high-contrast/40">
-              Usa "Generar Documento" o la Receta Rápida del Dashboard para crear el primero.
-            </p>
+            <button
+              type="button"
+              onClick={onGenerar}
+              className="text-xs font-bold text-primary hover:underline"
+            >
+              Generar el primero
+            </button>
           ) : (
             <button
               type="button"

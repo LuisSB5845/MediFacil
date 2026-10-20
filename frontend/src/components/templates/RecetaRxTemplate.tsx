@@ -1,14 +1,10 @@
 import React from 'react';
+import { CertificationType, RecetaRxData } from '../../types';
+import { MarcaDeAgua } from './MarcaDeAgua';
+import { medicamentosUtiles, romano } from '../../lib/recetaMedicamentos';
 
 // Plantilla FIJA de Receta Rx. El doctor no edita el layout — solo
 // llega el objeto de datos validado (RecetaRxData) desde la IA.
-
-export interface RecetaRxData {
-  nombrePaciente: string;
-  fecha: string;
-  /** Cuerpo de la receta en texto libre, tal cual lo escribió el doctor. */
-  contenido: string;
-}
 
 interface Props {
   data: RecetaRxData;
@@ -25,6 +21,9 @@ interface Props {
   phoneOffice?: string;
   phoneExt?: string;
   phoneCell?: string;
+  /** Marca de agua: imagen y tipos en los que debe aparecer. */
+  watermarkUrl?: string;
+  watermarkEn?: CertificationType[];
   documentRef?: React.RefObject<HTMLDivElement>;
 }
 
@@ -44,14 +43,25 @@ export const RecetaRxTemplate = ({
   phoneExt,
   phoneCell,
   documentRef,
+  watermarkUrl,
+  watermarkEn,
 }: Props) => {
+  // Receta estructurada: solo los renglones con nombre. Sin ellos se imprime
+  // el texto libre, que es como nacieron las recetas anteriores.
+  const medicamentos = medicamentosUtiles(data.medicamentos || []);
+  // El cuerpo tiene unos 220-260px utiles y cada medicamento ocupa dos lineas:
+  // de cinco en adelante hay que apretar para no desbordar la pagina.
+  const denso = medicamentos.length >= 5;
+
   // Proporción real de una hoja carta (8.5x11" a 96dpi = 816x1056px), para que
   // lo que se ve en pantalla sea lo que sale en papel, sin reescalados.
   return (
     <div
       ref={documentRef}
-      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative flex flex-col min-h-[1056px] w-full max-w-[816px] mx-auto"
+      className="receta-hoja bg-white rounded-[2rem] shadow-ambient border border-surface-container-high p-14 relative isolate flex flex-col min-h-[1056px] max-h-[1056px] overflow-hidden w-full max-w-[816px] mx-auto"
     >
+      <MarcaDeAgua watermarkUrl={watermarkUrl} watermarkEn={watermarkEn} tipo="receta" />
+      {/* El contenido va sobre la marca de agua. */}
       {/* Encabezado — logo personal + nombre + especialidad, centrado, estilo recetario físico */}
       <div className="flex flex-col items-center text-center gap-2 pb-6 shrink-0">
         <div className="w-full flex items-center justify-center">
@@ -92,11 +102,37 @@ export const RecetaRxTemplate = ({
             <span>Fecha: {data.fecha}</span>
           </div>
 
-          {/* Cuerpo — texto libre del doctor, con los saltos de línea intactos */}
+          {/* Cuerpo — lista de medicamentos, o el texto libre tal cual lo escribio */}
           <div className="px-2">
-            <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-              {data.contenido}
-            </p>
+            {medicamentos.length > 0 ? (
+              <ol className={denso ? 'space-y-3' : 'space-y-6'}>
+                {medicamentos.map((med, i) => (
+                  <li key={i} className="break-words [overflow-wrap:anywhere]">
+                    {/* Numeral centrado con la cantidad al margen derecho, y el
+                        medicamento centrado debajo, como en el recetario impreso.
+                        La cantidad se posiciona absoluta para no desplazar el
+                        centro del numeral. */}
+                    <div className="relative">
+                      <p className={`text-center font-black text-high-contrast ${denso ? 'text-sm' : 'text-base'}`}>
+                        {romano(i)}
+                      </p>
+                      {med.cantidad.trim() && (
+                        <span className={`absolute right-0 top-0 max-w-[40%] text-right font-bold text-high-contrast/80 ${denso ? 'text-xs' : 'text-sm'}`}>
+                          {med.cantidad.trim()}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-center font-medium text-high-contrast ${denso ? 'text-sm leading-snug' : 'text-base leading-relaxed'}`}>
+                      {med.nombre.trim()}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-base leading-relaxed font-medium text-high-contrast whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {data.contenido}
+              </p>
+            )}
           </div>
 
           {/* Nombre / Fecha / Firma — pie fijo dentro del marco */}

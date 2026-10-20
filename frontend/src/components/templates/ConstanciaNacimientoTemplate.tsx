@@ -45,7 +45,7 @@ export const ConstanciaNacimientoTemplate = ({
   profile: UserProfile | null;
   documentRef?: React.RefObject<HTMLDivElement>;
 }) => (
-  <HojaDocumento documentRef={documentRef}>
+  <HojaDocumento documentRef={documentRef} profile={profile} tipo="birth">
     <MembreteClinica profile={profile} />
 
     <h1 className="text-2xl font-black text-high-contrast uppercase tracking-[0.15em] text-center pt-16 shrink-0">
