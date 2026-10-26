@@ -70,6 +70,9 @@ export const DocumentViewerModal = ({
     phoneCell: profile?.phoneCell,
     watermarkUrl: profile?.watermarkUrl,
     watermarkEn: profile?.watermarkEn,
+    gender: profile?.gender,
+    doctorSymbolUrl: profile?.doctorSymbolUrl,
+    cedula: profile?.professionalId,
   };
 
   const renderDocumento = () => {

@@ -67,6 +67,11 @@ export interface UserProfile {
   phoneCell?: string;
   clinicLogoUrl?: string;
   doctorLogoUrl?: string;
+  /**
+   * Simbolo del medico, sin texto, que acompana al nombre en el encabezado de
+   * la receta. Distinto de doctorLogoUrl, que ya trae el nombre estilizado.
+   */
+  doctorSymbolUrl?: string;
   /** Marca de agua impresa detras del texto, en los documentos elegidos. */
   watermarkUrl?: string;
   /**
@@ -117,6 +122,8 @@ export interface Medicamento {
 export interface RecetaRxData {
   nombrePaciente: string;
   fecha: string;
+  /** Edad del paciente al emitir la receta ("34 años"). Falta en las viejas. */
+  edad?: string;
   /**
    * Cuerpo de la receta en texto libre, tal cual lo escribió el doctor.
    * Se escribe SIEMPRE, incluso en modo estructurado (derivado de la lista):
