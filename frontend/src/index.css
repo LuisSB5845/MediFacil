@@ -188,9 +188,12 @@ html {
    (fecha, título, URL, número de página). El margen real lo pone el propio
    documento con su padding interno. */
 @page {
-  /* `size` sin valor de papel: manda la hoja que elija el usuario en el
-     diálogo (carta, A4...). El margen 0 es lo que evita que el navegador
-     imprima sus propias cabeceras. */
+  /* Papel carta fijo: las hojas de documento estan maquetadas a 816x1056px
+     (8.5x11") y los recetarios de la consulta son carta. Si se dejaba al
+     dialogo, Chrome solia abrir en A4 —mas alto— y la impresora cortaba los
+     ~2 cm del pie (direccion, cedula, exequatur). El margen 0 es lo que evita
+     que el navegador imprima sus propias cabeceras. */
+  size: letter;
   margin: 0;
 }
 
