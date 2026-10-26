@@ -192,6 +192,8 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
   const recetaData: RecetaRxData = {
     nombrePaciente: docPatientNombre || 'N/E',
     fecha: recetaFecha.trim() || hoy,
+    // La edad sale de la ficha del paciente elegido.
+    edad: docPatient?.age ? `${docPatient.age} años` : '',
     contenido: recetaEstructurada ? aTextoLibre(recetaMedicamentos) : recetaContenido.trim(),
     ...(recetaEstructurada ? { medicamentos: medicamentosUtiles(recetaMedicamentos) } : {}),
   };
@@ -1429,6 +1431,9 @@ export const DocumentGenerator = ({ user, profile, patients = [], onVerDocumento
                         <OrdenLabTemplate
                           data={ordenLabData}
                           documentRef={documentRef}
+                          gender={profile?.gender}
+                          doctorSymbolUrl={profile?.doctorSymbolUrl}
+                          cedula={profile?.professionalId}
                           doctorName={profile?.displayName || 'Médico'}
                           specialty={profile?.specialty || ''}
                           exequatur={profile?.exequatur}

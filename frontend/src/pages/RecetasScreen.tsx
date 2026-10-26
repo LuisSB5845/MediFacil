@@ -248,6 +248,8 @@ export const RecetasScreen = ({
   const editRecetaData = (): RecetaRxData => ({
     nombrePaciente: editPaciente.trim(),
     fecha: editFecha.trim(),
+    // La edad no se edita aqui: se conserva la de la emision.
+    edad: selectedData?.edad,
     contenido: editContenidoFinal,
     ...(editEstructurada ? { medicamentos: medicamentosUtiles(editMedicamentos) } : {}),
   });
@@ -531,6 +533,9 @@ export const RecetasScreen = ({
             <RecetaRxTemplate
               data={mode === 'edit' ? editRecetaData() : selectedData!}
               documentRef={documentRef}
+              gender={profile?.gender}
+              doctorSymbolUrl={profile?.doctorSymbolUrl}
+              cedula={profile?.professionalId}
               doctorName={profile?.displayName || 'Médico'}
               specialty={profile?.specialty || ''}
               doctorInitials={buildInitials(profile?.displayName)}
