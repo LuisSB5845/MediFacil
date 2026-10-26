@@ -216,6 +216,18 @@ html {
   #printable-document, #printable-document * {
     visibility: visible;
   }
+
+  /* `visibility: hidden` no saca nada del flujo: el formulario y el resto de
+     la pantalla siguen ocupando papel aunque no se vean, y el navegador
+     anadia hojas en blanco detras del documento. Cuando lo que se imprime es
+     una hoja de documento —que ya esta acotada a una pagina—, la pagina se
+     corta a esa altura. El reporte de Finanzas no lleva .receta-hoja y puede
+     seguir ocupando varias paginas. */
+  html:has(.receta-hoja), body:has(.receta-hoja) {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
   #printable-document {
     position: absolute;
     left: 0;

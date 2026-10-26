@@ -100,8 +100,10 @@ export const RecetaRxTemplate = ({
     >
       <MarcaDeAgua watermarkUrl={watermarkUrl} watermarkEn={watermarkEn} tipo="receta" />
 
-      {/* Encabezado — centro medico a la izquierda, medico a la derecha */}
-      <header className="relative flex justify-between items-start gap-6 shrink-0">
+      {/* Encabezado — centro medico a la izquierda, medico a la derecha.
+          Va en <div> y no en <header>: la hoja de impresion oculta todo
+          <header> para quitar la barra de la app, y se llevaba este con ella. */}
+      <div className="relative flex justify-between items-start gap-6 shrink-0">
         <div className="flex items-center gap-3 max-w-[48%]">
           {clinicLogoUrl && <img src={clinicLogoUrl} alt="" className="w-[72px] h-auto object-contain shrink-0" />}
           <div className="leading-snug">
@@ -122,7 +124,7 @@ export const RecetaRxTemplate = ({
             <img src={doctorSymbolUrl} alt="" className="w-[92px] h-[92px] object-contain shrink-0" />
           )}
         </div>
-      </header>
+      </div>
 
       <div className="relative h-[2px] mt-5 mb-4 shrink-0" style={{ background: ROSA }} />
 
